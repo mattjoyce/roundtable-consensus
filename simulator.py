@@ -4,44 +4,64 @@ from pprint import pprint
 from models import GlobalConfig, AgentActor, AgentPool
 from primer import Primer
 from roundtable import Consensus
+from thebureau import TheBureau
+from creditmanager import CreditManager
 
 # Generate agent pool with 5 < n < 50 agents (seeded)
 pool_seed = 123  # Fixed seed for reproducible agent pool generation
+run_seed = 42  # Seed for run configuration generation
+print(f"Using pool seed: {pool_seed}, run seed: {run_seed}")
+
 random.seed(pool_seed)
 pool_size = random.randint(6, 49)  # 6-49 inclusive, so 5 < n < 50
 agents = {
     f"Agent_{i}": AgentActor(
         agent_id=f"Agent_{i}",
-        initial_balance=100,
-        hooks=[],
+        initial_balance=random.randint(0, 300),  # Random initial balance for variety
         metadata={},
         seed=pool_seed + i  # Ensure unique seed for each agent
     ) for i in range(pool_size)
 }
 agent_pool = AgentPool(agents=agents)
-
-gc = GlobalConfig(
-    max_feedback_per_agent=3,
-    feedback_stake=5,
-    proposal_self_stake=50,
-    revision_cycles=2,
-    staking_rounds=5,
-    conviction_params={
-        "MaxMultiplier": 2.0,
-        "TargetFraction": 0.98
-    },
-    agent_pool=agent_pool
-)
-
 print(f"Generated agent pool with {pool_size} agents (seed: {pool_seed})")
 
-primer = Primer(gc)
-rc = primer.generate_run_config(seed=42, num_agents=5)
+#extract the balanced balances from the agent pool
+initial_balances = {aid: agent.initial_balance for aid, agent in agents.items()}
 
-scenario = Consensus(global_config=gc, run_config=rc)
-result = scenario.run()
 
-print("Phase execution:")
-pprint(result["phases_executed"])
-print("\nSummary:")
-pprint(result["summary"])
+thebureau = TheBureau(agent_pool=agent_pool)
+
+max_scenarios = 5  # Number of simulations to run
+for i in range(max_scenarios):
+    print(f"Running simulation {i + 1} of {max_scenarios} with seed {run_seed + i}")
+
+    gc = GlobalConfig(
+        assignment_award=100,  # Fixed award for assignment
+        max_feedback_per_agent=3,
+        feedback_stake=5,
+        proposal_self_stake=50,
+        revision_cycles=random.randint(1, 4),  # Randomize revision cycles for variety
+        staking_rounds=random.randint(5, 10),  # Randomize staking rounds
+        conviction_params={
+            "MaxMultiplier": 2.0,
+            "TargetFraction": 0.98
+        },
+        agent_pool=agent_pool
+    )
+
+
+    primer = Primer(gc)
+    rc = primer.generate_run_config(seed=run_seed, num_agents=5)
+
+
+    scenario=thebureau.start_consensus_run(global_config=gc, run_config=rc)
+
+
+    result = scenario.run()
+
+    print("Phase execution:")
+    pprint(result["phases_executed"])
+    print("\nSummary:")
+    pprint(result["summary"])
+
+    pprint(scenario.creditmgr.get_events())

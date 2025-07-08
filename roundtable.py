@@ -135,10 +135,61 @@ def generate_phases(global_config: GlobalConfig) -> List[Phase]:
     
     return phases
 
+class CreditManager:
+    def __init__(self, initial_balances: dict):
+        # Map agent_id -> current CP balance
+        self.balances = dict(initial_balances)  # Make a copy
+        self.events = []  # Burn / Transfer / Rejection logs
+
+    def get_balance(self, agent_id: str) -> int:
+        return self.balances.get(agent_id, 0)
+
+    def attempt_deduct(self, agent_id: str, amount: int, reason: str, tick: int, issue_id: str) -> bool:
+        if self.get_balance(agent_id) >= amount:
+            self.balances[agent_id] -= amount
+            self.events.append({
+                "type": "Burn",
+                "agent_id": agent_id,
+                "amount": amount,
+                "reason": reason,
+                "tick": tick,
+                "issue_id": issue_id
+            })
+            return True
+        else:
+            self.events.append({
+                "type": "InsufficientCredit",
+                "agent_id": agent_id,
+                "amount": amount,
+                "reason": reason,
+                "tick": tick,
+                "issue_id": issue_id
+            })
+            return False
+
+    def credit(self, agent_id: str, amount: int, reason: str, tick: int, issue_id: str):
+        self.balances[agent_id] = self.get_balance(agent_id) + amount
+        self.events.append({
+            "type": "Credit",
+            "agent_id": agent_id,
+            "amount": amount,
+            "reason": reason,
+            "tick": tick,
+            "issue_id": issue_id
+        })
+
+    def get_all_balances(self) -> dict:
+        return dict(self.balances)
+
+    def get_events(self) -> list:
+        return list(self.events)
+
+
 class Consensus:
-    def __init__(self, global_config: GlobalConfig, run_config: RunConfig):
+    def __init__(self, global_config: GlobalConfig, run_config: RunConfig, creditmgr: CreditManager):
         self.gc = global_config
         self.rc = run_config
+        self.creditmgr = creditmgr
         self.state = self._init_state()
         self.ledger = []
         self.phases = generate_phases(global_config)
@@ -151,6 +202,7 @@ class Consensus:
             "balances": self.rc.get_initial_balances(),
             "proposals": dict(self.rc.initial_proposals),
             "current_phase": None,
+            "creditmgr": self.creditmgr,
             "phase_start_tick": 0,
         }
 

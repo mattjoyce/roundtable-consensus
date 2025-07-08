@@ -5,21 +5,23 @@ from typing import List, Dict, Optional
 class Agent(BaseModel):
     agent_id: str
     balance: int
-    hooks: Optional[List[str]] = []
     metadata: Optional[Dict[str, str]] = {}
 
 class AgentActor(BaseModel):
     agent_id: str
     initial_balance: int
-    hooks: Optional[List[str]] = []
     metadata: Optional[Dict[str, str]] = {}
     seed: Optional[int] = None  # Optional seed for reproducibility
-    
+
+    def on_signal(self, payload: Dict[str, str]) ->  Optional[dict]:
+        """Handle signals sent to the agent."""
+        # This method can be overridden by subclasses to implement specific behavior
+        pass
+
     def clone(self) -> 'AgentActor':
         return AgentActor(
             agent_id=self.agent_id,
             initial_balance=self.initial_balance,
-            hooks=self.hooks.copy() if self.hooks else [],
             metadata=self.metadata.copy() if self.metadata else {},
             seed=self.seed
         )
@@ -44,6 +46,7 @@ class AgentPool(BaseModel):
 class GlobalConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
     
+    assignment_award: int = Field(ge=1)
     max_feedback_per_agent: int = Field(ge=1)
     feedback_stake: int = Field(ge=1)
     proposal_self_stake: int = Field(ge=1)
