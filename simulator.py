@@ -1,13 +1,13 @@
 # consensus.py - Simulation runner and configuration generator
 import random
 from pprint import pprint
-from models import GlobalConfig, AgentActor, AgentPool, Issue
+from models import GlobalConfig, AgentActor, AgentPool, Issue, ActionQueue, Action, ACTION_QUEUE
 from primer import Primer
 from thebureau import TheBureau
 
 # Generate agent pool with 5 < n < 50 agents (seeded)
-pool_seed = 123  # Fixed seed for reproducible agent pool generation
-run_seed = 42  # Seed for run configuration generation
+pool_seed = 1113  # Fixed seed for reproducible agent pool generation
+run_seed = 1719  # Seed for run configuration generation
 print(f"Using pool seed: {pool_seed}, run seed: {run_seed}")
 
 random.seed(pool_seed)
@@ -16,7 +16,7 @@ agents = {
     f"Agent_{i}": AgentActor(
         agent_id=f"Agent_{i}",
         initial_balance=random.randint(0, 300),  # Random initial balance for variety
-        metadata={},
+        metadata={"proposal_submission_likelihood": random.randint(1,100)},  # Random likelihood for proposal submission
         seed=pool_seed + i  # Ensure unique seed for each agent
     ) for i in range(pool_size)
 }
@@ -64,7 +64,7 @@ for i in range(max_scenarios):
 
 
 
-    thebureau.start_consensus_run(global_config=gc, run_config=rc)
+    thebureau.configure_consensus(global_config=gc, run_config=rc)
     result = thebureau.run()
 
     print("Phase execution:")

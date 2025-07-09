@@ -1,6 +1,5 @@
-from models import GlobalConfig, RunConfig, Agent, AgentActor, AgentPool
+from models import GlobalConfig, RunConfig, AgentActor
 import random
-from primer import Primer
 from typing import List, Dict
 
 class Phase:
@@ -9,7 +8,7 @@ class Phase:
         self.phase_number = phase_number
         self.max_think_ticks = max_think_ticks
     
-    def execute(self, state: Dict, agents: List[Agent]) -> Dict:
+    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
         raise NotImplementedError("Subclasses must implement execute")
     
     def is_complete(self, state: Dict) -> bool:
@@ -19,7 +18,13 @@ class ProposePhase(Phase):
     def __init__(self, phase_number: int, max_think_ticks: int = 3):
         super().__init__("PROPOSE", phase_number, max_think_ticks)
     
-    def execute(self, state: Dict, agents: List[Agent]) -> Dict:
+    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+        for agent in agents:
+            agent.on_signal({
+                "type": "Propose",
+                "phase_number": self.phase_number,
+                "max_think_ticks": self.max_think_ticks
+            })
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -33,7 +38,7 @@ class FeedbackPhase(Phase):
         self.feedback_stake = feedback_stake
         self.max_feedback_per_agent = max_feedback_per_agent
     
-    def execute(self, state: Dict, agents: List[Agent]) -> Dict:
+    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -46,7 +51,7 @@ class RevisePhase(Phase):
         self.cycle_number = cycle_number
         self.proposal_self_stake = proposal_self_stake
     
-    def execute(self, state: Dict, agents: List[Agent]) -> Dict:
+    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -59,7 +64,7 @@ class StakePhase(Phase):
         self.round_number = round_number
         self.conviction_params = conviction_params
     
-    def execute(self, state: Dict, agents: List[Agent]) -> Dict:
+    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -69,7 +74,7 @@ class FinalizePhase(Phase):
     def __init__(self, phase_number: int, max_think_ticks: int = 3):
         super().__init__("FINALIZE", phase_number, max_think_ticks)
     
-    def execute(self, state: Dict, agents: List[Agent]) -> Dict:
+    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
         return state
     
     def is_complete(self, state: Dict) -> bool:

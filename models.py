@@ -1,6 +1,6 @@
 # models.py
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 
 class Agent(BaseModel):
     agent_id: str
@@ -10,13 +10,14 @@ class Agent(BaseModel):
 class AgentActor(BaseModel):
     agent_id: str
     initial_balance: int
-    metadata: Optional[Dict[str, str]] = {}
+    metadata: Optional[Dict[str, str|int]] = {}
     seed: Optional[int] = None  # Optional seed for reproducibility
 
-    def on_signal(self, payload: Dict[str, str]) ->  Optional[dict]:
+    def on_signal(self, payload: Dict[str, str|int]) -> Optional[dict]:
         """Handle signals sent to the agent."""
         # This method can be overridden by subclasses to implement specific behavior
-        pass
+        self.automoton(payload)
+        return {"ack": True}
 
     def clone(self) -> 'AgentActor':
         return AgentActor(
@@ -25,6 +26,35 @@ class AgentActor(BaseModel):
             metadata=self.metadata.copy() if self.metadata else {},
             seed=self.seed
         )
+    
+    def automoton(self, payload: Dict[str, str|int]) -> Optional[dict]:
+        """Simulate Agents Behavior"""
+        # This method can be overridden by subclasses to implement specific behavior
+        if payload.get("type") == "Propose":
+            # Handle proposal logic here
+            print(f"Agent {self.agent_id} received proposal signal.")
+
+            if int(self.metadata["proposal_submission_likelihood"]) > 50:
+                print(f"Agent {self.agent_id} is likely to submit a proposal.")
+
+                # add message to ACTION_QUEUE
+                ACTION_QUEUE.submit(Action(
+                    type="submit_proposal",
+                    agent_id=self.agent_id,
+                    payload={"proposal_id": f"P{self.agent_id}", "content": "Sample proposal content"}
+                ))
+        elif payload.get("type") == "Feedback":
+            # Handle feedback logic here
+            print(f"Agent {self.agent_id} received feedback signal.")
+        elif payload.get("type") == "Revise":
+            # Handle revision logic here
+            print(f"Agent {self.agent_id} received revise signal.")
+        elif payload.get("type") == "Finalize":
+            # Handle finalization logic here
+            print(f"Agent {self.agent_id} received finalize signal.")
+        else:            
+            print(f"Agent {self.agent_id} received unknown signal: {payload}")
+        return {"ack": True}
 
 class AgentPool(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -42,6 +72,27 @@ class AgentPool(BaseModel):
 
     def get_all_ids(self) -> List[str]:
         return list(self.agents.keys())
+
+class Action(BaseModel):
+    type: Literal["submit_proposal", "feedback", "signal_ready"]
+    agent_id: str
+    payload: Dict  # May be refined into specific models later
+
+class ActionQueue(BaseModel):
+    queue: List[Action] = []
+
+    def submit(self, action: Action):
+        self.queue.append(action)
+        print(f"Action submitted: {action.type} by {action.agent_id}")
+
+    def drain(self) -> List[Action]:
+        drained = self.queue.copy()
+        self.queue.clear()
+        return drained
+
+# Global ACTION_QUEUE instance
+ACTION_QUEUE = ActionQueue()
+
 
 class GlobalConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
