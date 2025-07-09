@@ -1,7 +1,7 @@
-from models import AgentPool, GlobalConfig, RunConfig
+from models import AgentPool, GlobalConfig, RunConfig, Issue
 from roundtable import Consensus
-from primer import Primer
 from creditmanager import CreditManager
+from typing import Optional
 
 class TheBureau:
     def __init__(self, agent_pool: AgentPool):
@@ -10,8 +10,15 @@ class TheBureau:
         self.current_consensus = None
         initial_balances = {aid: agent.initial_balance for aid, agent in self.agent_pool.agents.items()}
         self.creditmgr = CreditManager(initial_balances=initial_balances)
+        self.current_issue: Optional[Issue] = None
 
+    def register_issue(self, issue: Issue):
+        self.current_issue = issue
 
+    def get_issue(self, issue_id: str) -> Issue:
+        if self.current_issue and self.current_issue.issue_id == issue_id:
+            return self.current_issue
+        raise ValueError(f"Issue {issue_id} not found")
 
     def start_consensus_run(self, global_config: GlobalConfig, run_config: RunConfig ) -> Consensus:
 

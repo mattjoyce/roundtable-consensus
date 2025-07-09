@@ -66,3 +66,9 @@ class RunConfig(BaseModel):
     
     def get_initial_balances(self) -> Dict[str, int]:
         return {aid: agent.initial_balance for aid, agent in self.selected_agents.items()}
+
+class Issue(BaseModel):
+    issue_id: str
+    problem_statement: str
+    background: str
+    metadata: Optional[Dict] = {}

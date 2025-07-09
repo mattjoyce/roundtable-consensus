@@ -1,11 +1,9 @@
 # consensus.py - Simulation runner and configuration generator
 import random
 from pprint import pprint
-from models import GlobalConfig, AgentActor, AgentPool
+from models import GlobalConfig, AgentActor, AgentPool, Issue
 from primer import Primer
-from roundtable import Consensus
 from thebureau import TheBureau
-from creditmanager import CreditManager
 
 # Generate agent pool with 5 < n < 50 agents (seeded)
 pool_seed = 123  # Fixed seed for reproducible agent pool generation
@@ -49,19 +47,27 @@ for i in range(max_scenarios):
         agent_pool=agent_pool
     )
 
-
     primer = Primer(gc)
     rc = primer.generate_run_config(seed=run_seed, num_agents=5)
 
+    # Create a sample issue for the simulation
+    issue = Issue(
+        issue_id=f"Issue_{run_seed + i}",
+        problem_statement="Sample problem statement for the issue.",
+        background="Background information about the issue.",
+        metadata={"created_by": "simulator", "created_at": "2023-10-01"}
+    )
 
-    scenario=thebureau.start_consensus_run(global_config=gc, run_config=rc)
+    # Register the issue in TheBureau
+    thebureau.register_issue(issue)
+    print(f"Registered issue: {issue.issue_id}")
 
 
-    result = scenario.run()
+
+    thebureau.start_consensus_run(global_config=gc, run_config=rc)
+    result = thebureau.run()
 
     print("Phase execution:")
     pprint(result["phases_executed"])
     print("\nSummary:")
     pprint(result["summary"])
-
-    pprint(scenario.creditmgr.get_events())

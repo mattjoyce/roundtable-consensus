@@ -207,6 +207,10 @@ class Consensus:
         }
 
     def run(self):
+        """Run the consensus simulation until completion."""
+        # check the issue is set
+        if not self.rc.issue_id:
+            raise ValueError("RunConfig must have a valid issue_id set.")
         while not self._is_complete():
             self.tick()
         return self._summarize_results()
