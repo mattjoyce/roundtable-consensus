@@ -80,7 +80,7 @@
 
 - **6.1 Each agent must submit exactly one proposal for an issue.** Agents who do not craft a unique proposal must select the canonical `No Action` proposal.
     
-- **6.2 Upon proposal submission (including `No Action`), the system automatically places a self‑stake of `ProposalSelfStake` Conviction Points (default = 50) from the submitting agent onto that proposal.
+- **6.2 If an agent does not submit, the protocol automatically assigns them to the canonical NoAction proposal.
     
 
 ---

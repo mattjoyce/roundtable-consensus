@@ -122,4 +122,9 @@ class Issue(BaseModel):
     issue_id: str
     problem_statement: str
     background: str
+    agent_ids: List[str] = []  # Assigned agents
     metadata: Optional[Dict] = {}
+    
+    def is_assigned(self, agent_id: str) -> bool:
+        """Check if agent is assigned to this issue."""
+        return agent_id in self.agent_ids

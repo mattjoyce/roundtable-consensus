@@ -12,6 +12,8 @@ class TheBureau:
         initial_balances = {aid: agent.initial_balance for aid, agent in self.agent_pool.agents.items()}
         self.creditmgr = CreditManager(initial_balances=initial_balances)
         self.current_issue: Optional[Issue] = None
+        self.ready_agents: set = set()  # Track agents who submitted in current PROPOSE phase
+        self.proposals_this_phase: set = set()  # Track proposals submitted in current PROPOSE phase
 
     def register_issue(self, issue: Issue):
         self.current_issue = issue
@@ -38,6 +40,10 @@ class TheBureau:
         consensus.state["creditmgr"] = self.creditmgr
         consensus.state["config"] = global_config  # Pass full config for signal context
         self.current_consensus = consensus
+        
+        # Reset ready tracking for new consensus
+        self.ready_agents.clear()
+        self.proposals_this_phase.clear()
 
 
 
@@ -60,9 +66,32 @@ class TheBureau:
 
 
     def receive_proposal(self, agent_id: str, proposal: dict):
+        print(f"Received proposal from {agent_id}: {proposal}")
+        
+        # Validation 1: Check if there's an active issue
+        if not self.current_issue:
+            print(f"Rejected proposal from {agent_id}: No active issue")
+            return
+            
+        # Validation 2: Check if agent is assigned to the issue
+        if not self.current_issue.is_assigned(agent_id):
+            print(f"Rejected proposal from {agent_id}: Not assigned to issue {self.current_issue.issue_id}")
+            return
+            
+        # Validation 3: Check if agent already submitted in current PROPOSE phase
+        if agent_id in self.proposals_this_phase:
+            print(f"Rejected proposal from {agent_id}: Already submitted in current PROPOSE phase")
+            return
+            
+        # Validation 4: Check if proposal is for current issue
+        proposal_issue_id = proposal.get("parent_issue_id") or proposal.get("issue_id")
+        if proposal_issue_id != self.current_issue.issue_id:
+            print(f"Rejected proposal from {agent_id}: Wrong issue ID (got {proposal_issue_id}, expected {self.current_issue.issue_id})")
+            return
+        
         issue_id = self.current_issue.issue_id
         tick = self.current_consensus.state["tick"]
-        print(f"Received proposal from {agent_id}: {proposal}")
+        
         # Burn self-stake
         stake = self.current_consensus.gc.proposal_self_stake
         ok = self.creditmgr.attempt_deduct(
@@ -85,6 +114,11 @@ class TheBureau:
             "stake": stake,
             "tick": tick
         }
+        
+        # Mark agent as ready and track proposal submission
+        self.ready_agents.add(agent_id)
+        self.proposals_this_phase.add(agent_id)
 
         print(f"Proposal accepted from {agent_id}: {proposal_id}")
+        print(f"Agent {agent_id} marked as Ready")
 
