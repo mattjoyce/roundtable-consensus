@@ -43,10 +43,7 @@ class AgentActor(BaseModel):
             print(f"Agent {self.agent_id} received proposal signal.")
 
             if int(self.metadata["proposal_submission_likelihood"]) > 50:
-                print(f"Agent {self.agent_id} is likely to submit a proposal.")
-
                 # create a proposal
-
                 proposal = Proposal(
                     proposal_id=f"P{self.agent_id}",
                     content="Sample proposal content",
@@ -55,14 +52,21 @@ class AgentActor(BaseModel):
                     metadata={"example_key": "example_value"},
                     tick=0
                 )
-                print(f"Agent {self.agent_id} created proposal: {proposal}")
-
                 # add message to ACTION_QUEUE
                 ACTION_QUEUE.submit(Action(
                     type="submit_proposal",
                     agent_id=self.agent_id,
                     payload=proposal.model_dump()
                 ))
+            else:
+                # for agent not submitting half will signal ready, the other will default.
+                if int(self.metadata["proposal_submission_likelihood"]) % 2 == 0:
+                    print(f"Agent {self.agent_id} signaling ready without proposal.")
+                    ACTION_QUEUE.submit(Action(
+                        type="signal_ready",
+                        agent_id=self.agent_id,
+                        payload={"issue_id": payload.get("issue_id", "default_issue")}
+                    ))
 
         elif payload.get("type") == "Feedback":
             # Handle feedback logic here
@@ -160,3 +164,7 @@ class Issue(BaseModel):
     def get_proposal(self, proposal_id: str) -> Optional[Dict]:
         """Get a proposal by ID."""
         return self.proposals.get(proposal_id)
+    
+    def assign_agent_to_proposal(self, agent_id: str, proposal_id: str):
+        """Assign an agent to a proposal."""
+        self.agent_to_proposal_id[agent_id] = proposal_id

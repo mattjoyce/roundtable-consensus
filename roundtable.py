@@ -6,7 +6,7 @@ class Phase:
     def __init__(self, phase_type: str, phase_number: int, max_think_ticks: int = 3):
         self.phase_type = phase_type
         self.phase_number = phase_number
-        self.max_think_ticks = max_think_ticks
+        self.max_think_ticks = max_think_ticks  
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
         raise NotImplementedError("Subclasses must implement execute")
@@ -205,6 +205,7 @@ class Consensus:
         self.ledger = []
         self.phases = generate_phases(global_config)
         self.current_phase_index = 0
+
         
 
     def _init_state(self):
@@ -216,6 +217,8 @@ class Consensus:
             "current_phase": None,
             "creditmgr": self.creditmgr,
             "phase_start_tick": 0,
+            "phase_tick": 0,
+            "ready_agents": set()
         }
 
     def run(self):
@@ -229,25 +232,34 @@ class Consensus:
 
     def tick(self):
         self.state["tick"] += 1
-        
-        # Get current phase
         current_phase = self.get_current_phase()
-        if current_phase != self.state["current_phase"]:
-            # Phase transition
-            self.state["current_phase"] = current_phase.phase_type if current_phase else None
+
+        # Phase transition detection
+        if current_phase.phase_type != self.state["current_phase"]:
+            self.state["current_phase"] = current_phase.phase_type
             self.state["phase_start_tick"] = self.state["tick"]
-            
-        # Execute current phase
-        if current_phase:
-            agents = list(self.rc.selected_agents.values())
-            self.state = current_phase.execute(self.state, agents)
-            
-            # Check if phase is complete
-            if current_phase.is_complete(self.state):
-                self.current_phase_index += 1
-        
-        # Record state
+            self.state["phase_tick"] = 1
+            self.state["ready_agents"] = set()
+        else:
+            self.state["phase_tick"] += 1
+
+        print(f"Tick {self.state['tick']} — Phase {self.state['current_phase']} (Phase Tick {self.state['phase_tick']})")
+
+        # Phase complete: skip execution, advance phase
+        if self.state["all_agents_ready"]:
+            print(f"All agents ready — transitioning to next phase.")
+            self.current_phase_index += 1
+
+        else:
+            # Execute phase logic
+            if current_phase:
+                agents = list(self.rc.selected_agents.values())
+                self.state = current_phase.execute(self.state, agents)
+
+        # Record the state in the ledger
         self.ledger.append(self.state.copy())
+
+
 
     def get_current_phase(self) -> Phase:
         if self.current_phase_index >= len(self.phases):
@@ -257,11 +269,11 @@ class Consensus:
     def _is_complete(self):
         return self.current_phase_index >= len(self.phases)
     
-    def is_last_phase_tick(self) -> bool:
+    def is_think_tick_over(self) -> bool:
         current_tick = self.state["tick"]
         start_tick = self.state["phase_start_tick"]
         phase = self.get_current_phase()
-        return (current_tick - start_tick + 1) == phase.max_think_ticks  
+        return (current_tick - start_tick) == phase.max_think_ticks  
 
     def _summarize_results(self):
         phase_summary = []
