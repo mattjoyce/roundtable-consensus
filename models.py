@@ -2,6 +2,14 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Optional, Literal
 
+class Proposal(BaseModel):
+    tick: int
+    proposal_id: str
+    content: str
+    agent_id: str
+    issue_id: str
+    metadata: Optional[Dict[str, str]] = {}
+
 class Agent(BaseModel):
     agent_id: str
     balance: int
@@ -37,12 +45,25 @@ class AgentActor(BaseModel):
             if int(self.metadata["proposal_submission_likelihood"]) > 50:
                 print(f"Agent {self.agent_id} is likely to submit a proposal.")
 
+                # create a proposal
+
+                proposal = Proposal(
+                    proposal_id=f"P{self.agent_id}",
+                    content="Sample proposal content",
+                    agent_id=self.agent_id,
+                    issue_id=payload.get("issue_id", "default_issue"),
+                    metadata={"example_key": "example_value"},
+                    tick=0
+                )
+                print(f"Agent {self.agent_id} created proposal: {proposal}")
+
                 # add message to ACTION_QUEUE
                 ACTION_QUEUE.submit(Action(
                     type="submit_proposal",
                     agent_id=self.agent_id,
-                    payload={"proposal_id": f"P{self.agent_id}", "content": "Sample proposal content"}
+                    payload=proposal.model_dump()
                 ))
+
         elif payload.get("type") == "Feedback":
             # Handle feedback logic here
             print(f"Agent {self.agent_id} received feedback signal.")
@@ -123,8 +144,19 @@ class Issue(BaseModel):
     problem_statement: str
     background: str
     agent_ids: List[str] = []  # Assigned agents
+    proposals: List[Proposal] = []
+    agent_to_proposal_id: Dict[str, str] = {}
     metadata: Optional[Dict] = {}
     
     def is_assigned(self, agent_id: str) -> bool:
         """Check if agent is assigned to this issue."""
         return agent_id in self.agent_ids
+    
+    def add_proposal(self, proposal: Proposal):
+        """Add a proposal to this issue."""
+        self.proposals.append(proposal)
+        self.agent_to_proposal_id[proposal.agent_id] = proposal.proposal_id
+    
+    def get_proposal(self, proposal_id: str) -> Optional[Dict]:
+        """Get a proposal by ID."""
+        return self.proposals.get(proposal_id)

@@ -29,7 +29,7 @@ initial_balances = {aid: agent.initial_balance for aid, agent in agents.items()}
 
 thebureau = TheBureau(agent_pool=agent_pool)
 
-max_scenarios = 5  # Number of simulations to run
+max_scenarios = 2  # Number of simulations to run
 for i in range(max_scenarios):
     print(f"Running simulation {i + 1} of {max_scenarios} with seed {run_seed + i}")
 
@@ -38,8 +38,8 @@ for i in range(max_scenarios):
         max_feedback_per_agent=3,
         feedback_stake=5,
         proposal_self_stake=50,
-        revision_cycles=random.randint(1, 4),  # Randomize revision cycles for variety
-        staking_rounds=random.randint(5, 10),  # Randomize staking rounds
+        revision_cycles=random.randint(1, 3),  # Randomize revision cycles for variety
+        staking_rounds=random.randint(5, 7),  # Randomize staking rounds
         conviction_params={
             "MaxMultiplier": 2.0,
             "TargetFraction": 0.98

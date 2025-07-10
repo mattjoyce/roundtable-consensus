@@ -1,4 +1,4 @@
-from models import AgentPool, GlobalConfig, RunConfig, Issue
+from models import AgentPool, GlobalConfig, RunConfig, Issue,Proposal
 from models import ACTION_QUEUE
 from roundtable import Consensus
 from creditmanager import CreditManager
@@ -25,6 +25,10 @@ class TheBureau:
 
     def configure_consensus(self, global_config: GlobalConfig, run_config: RunConfig ) -> None:
 
+        # Assign agents to current issue
+        if self.current_issue:
+            self.current_issue.agent_ids = run_config.agent_ids.copy()
+
         #award all agents a credit
         for agent_id in run_config.agent_ids:
             self.creditmgr.credit(
@@ -48,13 +52,24 @@ class TheBureau:
 
 
     def run(self):
+        """Run the consensus simulation until completion."""
         if not self.current_consensus:
             raise RuntimeError("No active consensus run.")
 
+        if not self.current_issue:
+            raise RuntimeError("No active issue registered.")
+
         consensus = self.current_consensus
+        consensus.state["issue_id"] = self.current_issue.issue_id
 
         while not consensus._is_complete():
             self._process_pending_actions()
+            if self.current_consensus.is_last_phase_tick():
+                print(f"Last tick of phase {consensus.get_current_phase().name} at tick {consensus.state['tick']}")
+                unready = self.get_unready_agents()
+                for agent_id in unready:
+                    self.assign_default_proposal(agent_id, self.current_consensus.state["tick"])
+            print("Ticking consensus...")
             consensus.tick()
 
         return consensus._summarize_results()
@@ -62,11 +77,12 @@ class TheBureau:
     def _process_pending_actions(self):
         for action in ACTION_QUEUE.drain():
             if action.type == "submit_proposal":
-                self.receive_proposal(action.agent_id, action.payload)
+                proposal=Proposal(**action.payload)
+                self.receive_proposal(action.agent_id, proposal)
 
 
-    def receive_proposal(self, agent_id: str, proposal: dict):
-        print(f"Received proposal from {agent_id}: {proposal}")
+    def receive_proposal(self, agent_id: str, proposal: Proposal):
+        print(f"Received proposal from {agent_id}: {proposal.proposal_id} for issue {proposal.issue_id}")
         
         # Validation 1: Check if there's an active issue
         if not self.current_issue:
@@ -84,41 +100,22 @@ class TheBureau:
             return
             
         # Validation 4: Check if proposal is for current issue
-        proposal_issue_id = proposal.get("parent_issue_id") or proposal.get("issue_id")
-        if proposal_issue_id != self.current_issue.issue_id:
-            print(f"Rejected proposal from {agent_id}: Wrong issue ID (got {proposal_issue_id}, expected {self.current_issue.issue_id})")
+        if proposal.issue_id != self.current_issue.issue_id:
+            print(f"Rejected proposal from {agent_id}: Wrong issue ID (got {proposal.issue_id}, expected {self.current_issue.issue_id})")
             return
         
         issue_id = self.current_issue.issue_id
         tick = self.current_consensus.state["tick"]
-        
-        # Burn self-stake
-        stake = self.current_consensus.gc.proposal_self_stake
-        ok = self.creditmgr.attempt_deduct(
-            agent_id=agent_id,
-            amount=stake,
-            reason="Proposal submission self-stake",
-            tick=tick,
-            issue_id=issue_id
-        )
 
-        if not ok:
-            print(f"Agent {agent_id} had insufficient credit for self-stake.")
-            return
-
-        # Store proposal in consensus state
-        proposal_id = proposal.get("proposal_id")
-        self.current_consensus.state["proposals"][proposal_id] = {
-            "agent_id": agent_id,
-            "content": proposal["content"],
-            "stake": stake,
-            "tick": tick
-        }
+        #update proposal with issue ID and tick
+        proposal.tick = tick
+        # Store proposal in Issue 
+        self.current_issue.add_proposal(proposal)
         
         # Mark agent as ready and track proposal submission
         self.ready_agents.add(agent_id)
         self.proposals_this_phase.add(agent_id)
 
-        print(f"Proposal accepted from {agent_id}: {proposal_id}")
+        print(f"Proposal accepted from {agent_id}: {proposal.proposal_id} for issue {issue_id} at tick {tick}")
         print(f"Agent {agent_id} marked as Ready")
 

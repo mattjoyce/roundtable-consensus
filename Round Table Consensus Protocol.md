@@ -45,8 +45,8 @@
 
 ## 4. Conviction Points
 
-- **4.1 Upon invitation, each agent is automatically credited with `StandardInvitePayment` Conviction Points (default = 100).**
-    
+- **4.1 Upon invitation, each agent is allocated  `StandardInvitePayment` Conviction Points (default = 100).** These points are held in escrow by the system and made available as the agent initiates stake-based action.
+
 - **4.2 Conviction Points constitute the transferable stake agents spend on proposals, feedback, and voting.**
     
 - **4.3 The total Conviction Points in circulation equals the sum of all initial allocations minus any burns (e.g., penalties).**
@@ -80,7 +80,7 @@
 
 - **6.1 Each agent must submit exactly one proposal for an issue.** Agents who do not craft a unique proposal must select the canonical `No Action` proposal.
     
-- **6.2 If an agent does not submit, the protocol automatically assigns them to the canonical NoAction proposal.
+- **6.2 If an agent does not submit, the protocol automatically assigns them to the canonical `NoAction` proposal.
     
 
 ---

@@ -19,11 +19,13 @@ class ProposePhase(Phase):
         super().__init__("PROPOSE", phase_number, max_think_ticks)
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+        print(f"Executing Propose Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}")
         for agent in agents:
             agent.on_signal({
                 "type": "Propose",
                 "phase_number": self.phase_number,
-                "max_think_ticks": self.max_think_ticks
+                "max_think_ticks": self.max_think_ticks,
+                "issue_id": state.get("issue_id")
             })
         return state
     
@@ -39,6 +41,7 @@ class FeedbackPhase(Phase):
         self.max_feedback_per_agent = max_feedback_per_agent
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+        print(f"Executing Feedback Phase [{self.phase_number}] for cycle {self.cycle_number} with max feedback per agent {self.max_feedback_per_agent}")
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -52,6 +55,7 @@ class RevisePhase(Phase):
         self.proposal_self_stake = proposal_self_stake
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+        print(f"Executing Revise Phase [{self.phase_number}] for cycle {self.cycle_number} with proposal self-stake {self.proposal_self_stake}")
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -65,6 +69,7 @@ class StakePhase(Phase):
         self.conviction_params = conviction_params
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+        print(f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}")
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -75,6 +80,7 @@ class FinalizePhase(Phase):
         super().__init__("FINALIZE", phase_number, max_think_ticks)
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+        print(f"Executing Finalize Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}")
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -199,6 +205,7 @@ class Consensus:
         self.ledger = []
         self.phases = generate_phases(global_config)
         self.current_phase_index = 0
+        
 
     def _init_state(self):
         return {
@@ -250,6 +257,12 @@ class Consensus:
     def _is_complete(self):
         return self.current_phase_index >= len(self.phases)
     
+    def is_last_phase_tick(self) -> bool:
+        current_tick = self.state["tick"]
+        start_tick = self.state["phase_start_tick"]
+        phase = self.get_current_phase()
+        return (current_tick - start_tick + 1) == phase.max_think_ticks  
+
     def _summarize_results(self):
         phase_summary = []
         for i, phase in enumerate(self.phases):
