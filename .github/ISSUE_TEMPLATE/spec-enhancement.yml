@@ -1,0 +1,12 @@
+name: 💡 Spec Enhancement
+labels: ["area:spec", "type:enhancement"]
+body:
+  - type: input
+    id: section
+    attributes:
+      label: Affected section(s)
+  - type: textarea
+    id: proposal
+    attributes:
+      label: High-level proposal
+      placeholder: What change or new rule are you suggesting, and why?

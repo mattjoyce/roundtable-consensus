@@ -1,0 +1,12 @@
+name: 🐞 Code Bug
+labels: ["area:code", "type:bug"]
+body:
+  - type: input
+    id: file
+    attributes:
+      label: File & line
+      placeholder: e.g. roundtable.py:147
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce

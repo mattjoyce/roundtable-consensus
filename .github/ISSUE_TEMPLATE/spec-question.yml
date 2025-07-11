@@ -1,0 +1,15 @@
+name: ❓ Spec Question / Clarification
+description: Something in the written protocol is unclear or contradictory
+labels: ["area:spec", "type:question"]
+body:
+  - type: input
+    id: section
+    attributes:
+      label: Section & spec version
+      placeholder: e.g. §9.3 (v1.0.0)
+  - type: textarea
+    id: problem
+    attributes:
+      label: What seems unclear or missing?
+      description: Be as concrete as possible—quote the sentence if you can.
+      placeholder: …
