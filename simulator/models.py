@@ -1,6 +1,7 @@
 # models.py
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Optional, Literal
+from loguru import logger
 
 class Proposal(BaseModel):
     tick: int
@@ -40,7 +41,7 @@ class AgentActor(BaseModel):
         # This method can be overridden by subclasses to implement specific behavior
         if payload.get("type") == "Propose":
             # Handle proposal logic here
-            print(f"Agent {self.agent_id} received proposal signal.")
+            logger.debug(f"Agent {self.agent_id} received proposal signal.")
 
             if int(self.metadata["proposal_submission_likelihood"]) > 50:
                 # create a proposal
@@ -61,7 +62,7 @@ class AgentActor(BaseModel):
             else:
                 # for agent not submitting half will signal ready, the other will default.
                 if int(self.metadata["proposal_submission_likelihood"]) % 2 == 0:
-                    print(f"Agent {self.agent_id} signaling ready without proposal.")
+                    logger.debug(f"Agent {self.agent_id} signaling ready without proposal.")
                     ACTION_QUEUE.submit(Action(
                         type="signal_ready",
                         agent_id=self.agent_id,
@@ -70,15 +71,15 @@ class AgentActor(BaseModel):
 
         elif payload.get("type") == "Feedback":
             # Handle feedback logic here
-            print(f"Agent {self.agent_id} received feedback signal.")
+            logger.debug(f"Agent {self.agent_id} received feedback signal.")
         elif payload.get("type") == "Revise":
             # Handle revision logic here
-            print(f"Agent {self.agent_id} received revise signal.")
+            logger.debug(f"Agent {self.agent_id} received revise signal.")
         elif payload.get("type") == "Finalize":
             # Handle finalization logic here
-            print(f"Agent {self.agent_id} received finalize signal.")
+            logger.debug(f"Agent {self.agent_id} received finalize signal.")
         else:            
-            print(f"Agent {self.agent_id} received unknown signal: {payload}")
+            logger.warning(f"Agent {self.agent_id} received unknown signal: {payload}")
         return {"ack": True}
 
 class AgentPool(BaseModel):
@@ -108,7 +109,7 @@ class ActionQueue(BaseModel):
 
     def submit(self, action: Action):
         self.queue.append(action)
-        print(f"Action submitted: {action.type} by {action.agent_id}")
+        logger.debug(f"Action submitted: {action.type} by {action.agent_id}")
 
     def drain(self) -> List[Action]:
         drained = self.queue.copy()

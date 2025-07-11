@@ -79,18 +79,25 @@ class SimulationLogger:
         
         self._setup_logging()
     
+    def _add_forensic_symbol(self, record):
+        """Add forensic symbol to record extra data."""
+        # Check if this is a forensic event (has event_dict)
+        is_forensic = "event_dict" in record["extra"]
+        record["extra"]["symbol"] = "🔬" if is_forensic else "💬"
+        return True
+
     def _setup_logging(self):
         """Configure loguru with rich console and SQLite sinks."""
         # Remove default logger
         logger.remove()
         
-        # Add rich console handler
+        # Add rich console handler with symbol formatting
         log_level = self._get_log_level()
         logger.add(
             RichHandler(console=self.console, rich_tracebacks=True),
             level=log_level,
-            format="{time:HH:mm:ss} | {level: <8} | {message}",
-            filter=lambda record: True  # Allow all records through console
+            format="{time:HH:mm:ss} | {level: <8} | {extra[symbol]} {message}",
+            filter=self._add_forensic_symbol
         )
         
         # Add SQLite sink for forensic capture

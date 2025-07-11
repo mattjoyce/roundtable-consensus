@@ -69,12 +69,14 @@ class TheBureau:
         while not consensus._is_complete():
             self._process_pending_actions()
             if self.current_consensus.is_think_tick_over():
+                current_phase = consensus.get_current_phase()
                 logger.bind(event_dict={
                     "event_type": "phase_timeout",
                     "tick": consensus.state['tick'],
-                    "phase": str(consensus.get_current_phase()),
+                    "phase": current_phase.phase_type,
+                    "phase_number": current_phase.phase_number,
                     "issue_id": self.current_issue.issue_id if self.current_issue else None
-                }).warning(f"Timeout {consensus.get_current_phase()} at tick {consensus.state['tick']}")
+                }).warning(f"Timeout {current_phase.phase_type} Phase [{current_phase.phase_number}] at tick {consensus.state['tick']}")
                 unready = self.get_unready_agents()
 
                 if len(unready) != 0:

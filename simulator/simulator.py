@@ -1,7 +1,6 @@
 # consensus.py - Simulation runner and configuration generator
 import random
 import argparse
-from pprint import pprint
 from models import GlobalConfig, AgentActor, AgentPool, Issue, ActionQueue, Action, ACTION_QUEUE
 from primer import Primer
 from thebureau import TheBureau
@@ -142,9 +141,10 @@ def main():
             result = thebureau.run()
             
             logger.info("Phase execution:")
-            pprint(result["phases_executed"])
+            for phase in result["phases_executed"]:
+                logger.info(f"  {phase}")
             logger.info("Summary:")
-            pprint(result["summary"])
+            logger.info(f"  {result['summary']}")
             
             logger.bind(event_dict={
                 "event_type": "scenario_complete",
