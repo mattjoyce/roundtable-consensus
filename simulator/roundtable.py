@@ -1,6 +1,7 @@
 from models import GlobalConfig, RunConfig, AgentActor
 import random
 from typing import List, Dict
+from loguru import logger
 
 class Phase:
     def __init__(self, phase_type: str, phase_number: int, max_think_ticks: int = 3):
@@ -19,7 +20,12 @@ class ProposePhase(Phase):
         super().__init__("PROPOSE", phase_number, max_think_ticks)
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        print(f"Executing Propose Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}")
+        logger.bind(event_dict={
+            "event_type": "phase_execution",
+            "phase_type": "PROPOSE",
+            "phase_number": self.phase_number,
+            "max_think_ticks": self.max_think_ticks
+        }).info(f"Executing Propose Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}")
         for agent in agents:
             agent.on_signal({
                 "type": "Propose",
@@ -41,7 +47,13 @@ class FeedbackPhase(Phase):
         self.max_feedback_per_agent = max_feedback_per_agent
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        print(f"Executing Feedback Phase [{self.phase_number}] for cycle {self.cycle_number} with max feedback per agent {self.max_feedback_per_agent}")
+        logger.bind(event_dict={
+            "event_type": "phase_execution",
+            "phase_type": "FEEDBACK",
+            "phase_number": self.phase_number,
+            "cycle_number": self.cycle_number,
+            "max_feedback_per_agent": self.max_feedback_per_agent
+        }).info(f"Executing Feedback Phase [{self.phase_number}] for cycle {self.cycle_number} with max feedback per agent {self.max_feedback_per_agent}")
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -55,7 +67,13 @@ class RevisePhase(Phase):
         self.proposal_self_stake = proposal_self_stake
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        print(f"Executing Revise Phase [{self.phase_number}] for cycle {self.cycle_number} with proposal self-stake {self.proposal_self_stake}")
+        logger.bind(event_dict={
+            "event_type": "phase_execution",
+            "phase_type": "REVISE",
+            "phase_number": self.phase_number,
+            "cycle_number": self.cycle_number,
+            "proposal_self_stake": self.proposal_self_stake
+        }).info(f"Executing Revise Phase [{self.phase_number}] for cycle {self.cycle_number} with proposal self-stake {self.proposal_self_stake}")
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -69,7 +87,13 @@ class StakePhase(Phase):
         self.conviction_params = conviction_params
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        print(f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}")
+        logger.bind(event_dict={
+            "event_type": "phase_execution",
+            "phase_type": "STAKE",
+            "phase_number": self.phase_number,
+            "round_number": self.round_number,
+            "conviction_params": self.conviction_params
+        }).info(f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}")
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -80,7 +104,12 @@ class FinalizePhase(Phase):
         super().__init__("FINALIZE", phase_number, max_think_ticks)
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        print(f"Executing Finalize Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}")
+        logger.bind(event_dict={
+            "event_type": "phase_execution",
+            "phase_type": "FINALIZE",
+            "phase_number": self.phase_number,
+            "max_think_ticks": self.max_think_ticks
+        }).info(f"Executing Finalize Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}")
         return state
     
     def is_complete(self, state: Dict) -> bool:
@@ -243,11 +272,20 @@ class Consensus:
         else:
             self.state["phase_tick"] += 1
 
-        print(f"Tick {self.state['tick']} — Phase {self.state['current_phase']} (Phase Tick {self.state['phase_tick']})")
+        logger.bind(event_dict={
+            "event_type": "consensus_tick",
+            "tick": self.state['tick'],
+            "phase": self.state['current_phase'],
+            "phase_tick": self.state['phase_tick']
+        }).debug(f"Tick {self.state['tick']} — Phase {self.state['current_phase']} (Phase Tick {self.state['phase_tick']})")
 
         # Phase complete: skip execution, advance phase
         if self.state["all_agents_ready"]:
-            print(f"All agents ready — transitioning to next phase.")
+            logger.bind(event_dict={
+                "event_type": "phase_transition",
+                "tick": self.state['tick'],
+                "current_phase_index": self.current_phase_index
+            }).info("All agents ready — transitioning to next phase.")
             self.current_phase_index += 1
 
         else:

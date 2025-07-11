@@ -1,73 +1,176 @@
 # consensus.py - Simulation runner and configuration generator
 import random
+import argparse
 from pprint import pprint
 from models import GlobalConfig, AgentActor, AgentPool, Issue, ActionQueue, Action, ACTION_QUEUE
 from primer import Primer
 from thebureau import TheBureau
+from simlog import setup_logging, generate_sim_id
+from loguru import logger
 
-# Generate agent pool with 5 < n < 50 agents (seeded)
-pool_seed = 1113  # Fixed seed for reproducible agent pool generation
-run_seed = 1719  # Seed for run configuration generation
-print(f"Using pool seed: {pool_seed}, run seed: {run_seed}")
-
-random.seed(pool_seed)
-pool_size = random.randint(6, 49)  # 6-49 inclusive, so 5 < n < 50
-agents = {
-    f"Agent_{i}": AgentActor(
-        agent_id=f"Agent_{i}",
-        initial_balance=random.randint(0, 300),  # Random initial balance for variety
-        metadata={"proposal_submission_likelihood": random.randint(1,100)},  # Random likelihood for proposal submission
-        seed=pool_seed + i  # Ensure unique seed for each agent
-    ) for i in range(pool_size)
-}
-agent_pool = AgentPool(agents=agents)
-print(f"Generated agent pool with {pool_size} agents (seed: {pool_seed})")
-
-#extract the balanced balances from the agent pool
-initial_balances = {aid: agent.initial_balance for aid, agent in agents.items()}
-
-
-thebureau = TheBureau(agent_pool=agent_pool)
-
-max_scenarios = 2  # Number of simulations to run
-for i in range(max_scenarios):
-    print(f"Running simulation {i + 1} of {max_scenarios} with seed {run_seed + i}")
-
-    gc = GlobalConfig(
-        assignment_award=100,  # Fixed award for assignment
-        max_feedback_per_agent=3,
-        feedback_stake=5,
-        proposal_self_stake=50,
-        revision_cycles=random.randint(1, 3),  # Randomize revision cycles for variety
-        staking_rounds=random.randint(5, 7),  # Randomize staking rounds
-        conviction_params={
-            "MaxMultiplier": 2.0,
-            "TargetFraction": 0.98
-        },
-        agent_pool=agent_pool
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Round Table Consensus Simulation",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
-
-    primer = Primer(gc)
-    rc = primer.generate_run_config(seed=run_seed, num_agents=5)
-
-    # Create a sample issue for the simulation
-    issue = Issue(
-        issue_id=f"Issue_{run_seed + i}",
-        problem_statement="Sample problem statement for the issue.",
-        background="Background information about the issue.",
-        metadata={"created_by": "simulator", "created_at": "2023-10-01"}
+    
+    parser.add_argument(
+        "--sim-id", 
+        type=str, 
+        help="Custom simulation ID (default: auto-generated yymmddHH-N)"
     )
+    
+    parser.add_argument(
+        "-v", "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity (-v for INFO, -vv for DEBUG, etc.)"
+    )
+    
+    parser.add_argument(
+        "--max-scenarios",
+        type=int,
+        default=2,
+        help="Number of simulation scenarios to run (default: 2)"
+    )
+    
+    parser.add_argument(
+        "--pool-seed",
+        type=int,
+        default=1113,
+        help="Seed for agent pool generation (default: 1113)"
+    )
+    
+    parser.add_argument(
+        "--run-seed",
+        type=int,
+        default=1719,
+        help="Seed for run configuration generation (default: 1719)"
+    )
+    
+    return parser.parse_args()
 
-    # Register the issue in TheBureau
-    thebureau.register_issue(issue)
-    print(f"Registered issue: {issue.issue_id}")
+
+def main():
+    """Main simulation runner."""
+    args = parse_arguments()
+    
+    # Generate or use provided simulation ID
+    sim_id = args.sim_id if args.sim_id else generate_sim_id()
+    
+    # Initialize logging
+    sim_logger = setup_logging(sim_id, args.verbose)
+    
+    try:
+        # Log simulation parameters
+        logger.info("Starting Round Table Consensus Simulation")
+        logger.bind(event_dict={
+            "event_type": "simulation_start",
+            "sim_id": sim_id,
+            "pool_seed": args.pool_seed,
+            "run_seed": args.run_seed,
+            "max_scenarios": args.max_scenarios,
+            "verbosity": args.verbose
+        }).info("Simulation parameters configured")
+        
+        # Generate agent pool with 5 < n < 50 agents (seeded)
+        pool_seed = args.pool_seed
+        run_seed = args.run_seed
+        logger.info(f"Using pool seed: {pool_seed}, run seed: {run_seed}")
+
+        random.seed(pool_seed)
+        pool_size = random.randint(6, 49)  # 6-49 inclusive, so 5 < n < 50
+        agents = {
+            f"Agent_{i}": AgentActor(
+                agent_id=f"Agent_{i}",
+                initial_balance=random.randint(0, 300),  # Random initial balance for variety
+                metadata={"proposal_submission_likelihood": random.randint(1,100)},  # Random likelihood for proposal submission
+                seed=pool_seed + i  # Ensure unique seed for each agent
+            ) for i in range(pool_size)
+        }
+        agent_pool = AgentPool(agents=agents)
+        logger.info(f"Generated agent pool with {pool_size} agents (seed: {pool_seed})")
+        
+        # Extract the balanced balances from the agent pool
+        initial_balances = {aid: agent.initial_balance for aid, agent in agents.items()}
+        
+        thebureau = TheBureau(agent_pool=agent_pool)
+        
+        max_scenarios = args.max_scenarios
+        for i in range(max_scenarios):
+            scenario_seed = run_seed + i
+            logger.info(f"Running simulation {i + 1} of {max_scenarios} with seed {scenario_seed}")
+            
+            logger.bind(event_dict={
+                "event_type": "scenario_start",
+                "scenario": i + 1,
+                "total_scenarios": max_scenarios,
+                "scenario_seed": scenario_seed
+            }).info(f"Starting scenario {i + 1}")
+            
+            gc = GlobalConfig(
+                assignment_award=100,  # Fixed award for assignment
+                max_feedback_per_agent=3,
+                feedback_stake=5,
+                proposal_self_stake=50,
+                revision_cycles=random.randint(1, 3),  # Randomize revision cycles for variety
+                staking_rounds=random.randint(5, 7),  # Randomize staking rounds
+                conviction_params={
+                    "MaxMultiplier": 2.0,
+                    "TargetFraction": 0.98
+                },
+                agent_pool=agent_pool
+            )
+            
+            primer = Primer(gc)
+            rc = primer.generate_run_config(seed=run_seed, num_agents=5)
+            
+            # Create a sample issue for the simulation
+            issue = Issue(
+                issue_id=f"Issue_{scenario_seed}",
+                problem_statement="Sample problem statement for the issue.",
+                background="Background information about the issue.",
+                metadata={"created_by": "simulator", "created_at": "2023-10-01"}
+            )
+            
+            # Register the issue in TheBureau
+            thebureau.register_issue(issue)
+            logger.info(f"Registered issue: {issue.issue_id}")
+            
+            thebureau.configure_consensus(global_config=gc, run_config=rc)
+            result = thebureau.run()
+            
+            logger.info("Phase execution:")
+            pprint(result["phases_executed"])
+            logger.info("Summary:")
+            pprint(result["summary"])
+            
+            logger.bind(event_dict={
+                "event_type": "scenario_complete",
+                "scenario": i + 1,
+                "issue_id": issue.issue_id,
+                "phases_executed": len(result["phases_executed"]),
+                "final_tick": result.get("final_state", {}).get("tick", 0)
+            }).info(f"Scenario {i + 1} completed")
+        
+        logger.bind(event_dict={
+            "event_type": "simulation_complete",
+            "sim_id": sim_id,
+            "scenarios_completed": max_scenarios
+        }).info("Simulation completed successfully")
+        
+    except Exception as e:
+        logger.bind(event_dict={
+            "event_type": "simulation_error",
+            "sim_id": sim_id,
+            "error": str(e)
+        }).error(f"Simulation failed: {e}")
+        raise
+    finally:
+        # Clean shutdown of logging
+        sim_logger.close()
 
 
-
-    thebureau.configure_consensus(global_config=gc, run_config=rc)
-    result = thebureau.run()
-
-    print("Phase execution:")
-    pprint(result["phases_executed"])
-    print("\nSummary:")
-    pprint(result["summary"])
+if __name__ == "__main__":
+    main()

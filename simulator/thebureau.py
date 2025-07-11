@@ -3,6 +3,7 @@ from models import ACTION_QUEUE
 from roundtable import Consensus
 from creditmanager import CreditManager
 from typing import Optional
+from loguru import logger
 
 class TheBureau:
     def __init__(self, agent_pool: AgentPool):
@@ -68,7 +69,12 @@ class TheBureau:
         while not consensus._is_complete():
             self._process_pending_actions()
             if self.current_consensus.is_think_tick_over():
-                print(f"Timeout {consensus.get_current_phase()} at tick {consensus.state['tick']}")
+                logger.bind(event_dict={
+                    "event_type": "phase_timeout",
+                    "tick": consensus.state['tick'],
+                    "phase": str(consensus.get_current_phase()),
+                    "issue_id": self.current_issue.issue_id if self.current_issue else None
+                }).warning(f"Timeout {consensus.get_current_phase()} at tick {consensus.state['tick']}")
                 unready = self.get_unready_agents()
 
                 if len(unready) != 0:
@@ -87,14 +93,23 @@ class TheBureau:
 
             # if we transistioned to a new phase, reset ready agents
             if consensus.state["phase_tick"] == 1:
-                print(f"Transitioned to new phase: {consensus.get_current_phase().phase_number}")
-                print(f"Phase Tick: {consensus.state['phase_tick']}")
+                logger.bind(event_dict={
+                    "event_type": "phase_transition",
+                    "tick": consensus.state['tick'],
+                    "phase_number": consensus.get_current_phase().phase_number,
+                    "phase_tick": consensus.state['phase_tick'],
+                    "issue_id": self.current_issue.issue_id if self.current_issue else None
+                }).info(f"Transitioned to new phase: {consensus.get_current_phase().phase_number}")
+                logger.debug(f"Phase Tick: {consensus.state['phase_tick']}")
                 self.ready_agents.clear()
 
             #share ready agents with consensus state
             consensus.state["all_agents_ready"] = not self.get_unready_agents()
             
-            print("Ticking consensus...")
+            logger.bind(event_dict={
+                "event_type": "consensus_tick",
+                "tick": consensus.state['tick']
+            }).debug("Ticking consensus...")
             consensus.tick()
 
         return consensus._summarize_results()
@@ -115,26 +130,50 @@ class TheBureau:
 
 
     def receive_proposal(self, agent_id: str, proposal: Proposal):
-        print(f"Received proposal from {agent_id}: {proposal.proposal_id} for issue {proposal.issue_id}")
+        logger.bind(event_dict={
+            "event_type": "proposal_received",
+            "agent_id": agent_id,
+            "proposal_id": proposal.proposal_id,
+            "issue_id": proposal.issue_id
+        }).info(f"Received proposal from {agent_id}: {proposal.proposal_id} for issue {proposal.issue_id}")
         
         # Validation 1: Check if there's an active issue
         if not self.current_issue:
-            print(f"Rejected proposal from {agent_id}: No active issue")
+            logger.bind(event_dict={
+                "event_type": "proposal_rejected",
+                "agent_id": agent_id,
+                "reason": "no_active_issue"
+            }).warning(f"Rejected proposal from {agent_id}: No active issue")
             return
             
         # Validation 2: Check if agent is assigned to the issue
         if not self.current_issue.is_assigned(agent_id):
-            print(f"Rejected proposal from {agent_id}: Not assigned to issue {self.current_issue.issue_id}")
+            logger.bind(event_dict={
+                "event_type": "proposal_rejected",
+                "agent_id": agent_id,
+                "reason": "not_assigned",
+                "issue_id": self.current_issue.issue_id
+            }).warning(f"Rejected proposal from {agent_id}: Not assigned to issue {self.current_issue.issue_id}")
             return
             
         # Validation 3: Check if agent already submitted in current PROPOSE phase
         if agent_id in self.proposals_this_phase:
-            print(f"Rejected proposal from {agent_id}: Already submitted in current PROPOSE phase")
+            logger.bind(event_dict={
+                "event_type": "proposal_rejected",
+                "agent_id": agent_id,
+                "reason": "already_submitted"
+            }).warning(f"Rejected proposal from {agent_id}: Already submitted in current PROPOSE phase")
             return
             
         # Validation 4: Check if proposal is for current issue
         if proposal.issue_id != self.current_issue.issue_id:
-            print(f"Rejected proposal from {agent_id}: Wrong issue ID (got {proposal.issue_id}, expected {self.current_issue.issue_id})")
+            logger.bind(event_dict={
+                "event_type": "proposal_rejected",
+                "agent_id": agent_id,
+                "reason": "wrong_issue_id",
+                "received_issue_id": proposal.issue_id,
+                "expected_issue_id": self.current_issue.issue_id
+            }).warning(f"Rejected proposal from {agent_id}: Wrong issue ID (got {proposal.issue_id}, expected {self.current_issue.issue_id})")
             return
         
         issue_id = self.current_issue.issue_id
@@ -150,8 +189,17 @@ class TheBureau:
         self.signal_ready(agent_id)
         self.proposals_this_phase.add(agent_id)
 
-        print(f"Proposal accepted from {agent_id}: {proposal.proposal_id} for issue {issue_id} at tick {tick}")
-        print(f"Agent {agent_id} marked as Ready")
+        logger.bind(event_dict={
+            "event_type": "proposal_accepted",
+            "agent_id": agent_id,
+            "proposal_id": proposal.proposal_id,
+            "issue_id": issue_id,
+            "tick": tick
+        }).info(f"Proposal accepted from {agent_id}: {proposal.proposal_id} for issue {issue_id} at tick {tick}")
+        logger.bind(event_dict={
+            "event_type": "agent_ready",
+            "agent_id": agent_id
+        }).debug(f"Agent {agent_id} marked as Ready")
 
     def create_no_action_proposal(self, tick: int, agent_id: str, issue_id: str) -> Proposal:
         proposal = Proposal(
@@ -164,5 +212,8 @@ class TheBureau:
         return proposal
     
     def signal_ready(self, agent_id: str):
-        print(f"Agent {agent_id} marked as Ready")
+        logger.bind(event_dict={
+            "event_type": "agent_ready",
+            "agent_id": agent_id
+        }).debug(f"Agent {agent_id} marked as Ready")
         self.ready_agents.add(agent_id)
