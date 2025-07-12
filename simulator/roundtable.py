@@ -87,6 +87,23 @@ class RevisePhase(Phase):
             "cycle_number": self.cycle_number,
             "proposal_self_stake": self.proposal_self_stake
         }).info(f"Executing Revise Phase [{self.phase_number}] for cycle {self.cycle_number} with proposal self-stake {self.proposal_self_stake}")
+        
+        issue_id = state.get("issue_id")
+        tick = state.get("tick")
+        
+        for agent in agents:
+            # TODO: Get actual feedback received for this agent's proposal
+            feedback_received = []  # Placeholder - should be populated with actual feedback
+            
+            agent.on_signal({
+                "type": "Revise",
+                "cycle_number": self.cycle_number,
+                "tick": tick,
+                "issue_id": issue_id,
+                "proposal_self_stake": self.proposal_self_stake,
+                "feedback_received": feedback_received
+            })
+        
         return state
     
     def is_complete(self, state: Dict) -> bool:

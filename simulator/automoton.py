@@ -14,6 +14,8 @@ def handle_signal(agent: AgentActor, payload: dict):
         return handle_propose(agent, payload)
     elif phase_type == "Feedback":
         return handle_feedback(agent, payload)
+    elif phase_type == "Revise":
+        return handle_revise(agent, payload)
     
     logger.debug(f"{agent.agent_id} received unhandled phase signal: {phase_type}")
     return {"ack": True}
@@ -80,9 +82,36 @@ def handle_propose(agent: AgentActor, payload: dict):
             decision_made = "hold"
 
     if decision_made == "submit":
+        # Generate bigger lorem ipsum content for testing
+        def generate_lorem_content(rng, word_count=60):
+            words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
+                    "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
+                    "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
+                    "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
+                    "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
+                    "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
+                    "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
+                    "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
+                    "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
+                    "augue", "feugait", "facilisi", "diam", "nonummy", "nibh", "euismod", "tincidunt"]
+            return " ".join(rng.choices(words, k=word_count))
+        
+        # Use traits to determine proposal size - similar to revision logic
+        thoroughness = profile.get("compliance", 0.5) + profile.get("consistency", 0.5)  # More methodical agents
+        verbosity = profile.get("sociability", 0.5)  # More social agents tend to be verbose  
+        initiative_boost = profile.get("initiative", 0.5) * 0.3  # Initiative agents may write more detailed proposals
+        trait_factor = (thoroughness + verbosity + initiative_boost) / 3.3  # Combine traits, normalize
+        
+        # Proposal size influenced by traits (30-70 words)
+        min_words = 30
+        max_words = 70
+        proposal_word_count = int(min_words + (trait_factor * (max_words - min_words)))
+        
+        content = generate_lorem_content(rng, proposal_word_count)
+        
         proposal = Proposal(
             proposal_id=f"P{agent.agent_id}",
-            content="Sample proposal content",
+            content=content,
             agent_id=agent.agent_id,
             issue_id=issue_id,
             tick=tick,
@@ -94,7 +123,7 @@ def handle_propose(agent: AgentActor, payload: dict):
             payload=proposal.model_dump()
         ))
         memory["has_acted"] = True
-        logger.info(f"{agent.agent_id} submitted proposal. (tick {tick})")
+        logger.info(f"{agent.agent_id} submitted proposal. (tick {tick}) [Content: {len(content.split())} words, {len(content)} chars] (trait_factor={trait_factor:.2f})")
 
     elif decision_made == "signal":
         ACTION_QUEUE.submit(Action(
@@ -199,4 +228,201 @@ def handle_feedback(agent: AgentActor, payload: dict):
         logger.info(f"[FEEDBACK] {agent.agent_id} submitted {len(targets)} feedbacks | Total: {memory['feedback_given']}/{max_feedback}")
     else:
         logger.info(f"[FEEDBACK] {agent.agent_id} attempted {len(targets)} over-quota feedbacks | Still at: {feedback_given}/{max_feedback}")
+    return {"ack": True}
+
+def handle_revise(agent: AgentActor, payload: dict):
+    """Handle REVISE phase signals for agent to revise their own proposals based on feedback."""
+    from models import Action
+    
+    issue_id = payload.get("issue_id", "unknown")
+    tick = payload.get("tick", 0)
+    feedback_received = payload.get("feedback_received", [])  # Feedback on agent's proposal
+    
+    rng = agent.rng
+    profile = agent.metadata.get("protocol_profile", {})
+    
+    # Get or initialize revise memory
+    memory = agent.memory.setdefault("revise", {})
+    has_revised = memory.get("has_revised", False)
+    
+    # Traits used for revision decisions
+    adaptability = profile.get("adaptability", 0.5)
+    self_interest = profile.get("self_interest", 0.5) 
+    compliance = profile.get("compliance", 0.9)
+    consistency = profile.get("consistency", 0.5)
+    risk_tolerance = profile.get("risk_tolerance", 0.2)
+    
+    # Check if agent has feedback on their proposal
+    if not feedback_received:
+        # For testing: Make agents more likely to revise even without feedback
+        # Use a combination of traits to decide whether to make a "preemptive" revision
+        should_revise_anyway, score, roll = weighted_trait_decision(
+            traits={"adaptability": adaptability, "initiative": profile.get("initiative", 0.5)},
+            weights={"adaptability": 0.7, "initiative": 0.3},
+            rng=rng
+        )
+        
+        if should_revise_anyway:
+            # Make a preemptive revision (simulating self-improvement)
+            delta_factor = (adaptability * 0.6 + risk_tolerance * 0.4)
+            delta = max(0.1, min(1.0, 0.1 + delta_factor * 0.6))  # Smaller deltas for preemptive revisions
+            
+            # Generate bigger revised content using lorem ipsum
+            def generate_lorem_content(rng, word_count=60):
+                words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
+                        "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
+                        "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
+                        "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
+                        "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
+                        "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
+                        "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
+                        "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
+                        "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
+                        "augue", "feugait", "facilisi", "diam", "nonummy", "nibh", "euismod", "tincidunt"]
+                return " ".join(rng.choices(words, k=word_count))
+            
+            # Use traits to determine revision size - more thorough agents write longer revisions
+            thoroughness = profile.get("compliance", 0.5) + profile.get("consistency", 0.5)  # More methodical agents
+            verbosity = profile.get("sociability", 0.5)  # More social agents tend to be verbose
+            trait_factor = (thoroughness + verbosity) / 3.0  # Combine traits, normalize
+            
+            # Base revision size influenced by traits (20-80 words)
+            min_words = 20
+            max_words = 80
+            revision_word_count = int(min_words + (trait_factor * (max_words - min_words)))
+            
+            lorem_content = generate_lorem_content(rng, revision_word_count)
+            new_content = f"REVISED (Δ={delta:.2f}): {lorem_content}"
+            
+            ACTION_QUEUE.submit(Action(
+                type="revise",
+                agent_id=agent.agent_id,
+                payload={
+                    "proposal_id": f"P{agent.agent_id}",
+                    "new_content": new_content,
+                    "delta": delta,
+                    "tick": tick,
+                    "issue_id": issue_id
+                }
+            ))
+            
+            memory["has_revised"] = True
+            memory["revision_delta"] = delta
+            
+            logger.info(f"[REVISE] {agent.agent_id} no feedback received, making preemptive revision (Δ={delta:.2f}) | adaptability={adaptability:.2f}, score={score:.2f} vs roll={roll:.2f} [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
+            return {"ack": True}
+        
+        # Fall back to compliance-based ready signal
+        should_signal, score2, roll2 = weighted_trait_decision(
+            traits={"compliance": compliance},
+            weights={"compliance": 1.0},
+            rng=rng
+        )
+        
+        if should_signal:
+            ACTION_QUEUE.submit(Action(
+                type="signal_ready",
+                agent_id=agent.agent_id,
+                payload={"issue_id": issue_id}
+            ))
+            logger.info(f"[REVISE] {agent.agent_id} no feedback received, signaling ready (compliance {score2:.2f} vs roll {roll2:.2f})")
+        else:
+            logger.info(f"[REVISE] {agent.agent_id} no feedback received, waiting (compliance {score2:.2f} vs roll {roll2:.2f})")
+        
+        return {"ack": True}
+    
+    # Agent received feedback - decide whether to revise
+    if has_revised:
+        # Already revised once this phase, use consistency trait to avoid over-revising
+        should_revise_again, score, roll = weighted_trait_decision(
+            traits={"consistency": 1 - consistency, "adaptability": adaptability},  # Lower consistency = more likely to revise again
+            weights={"consistency": 0.7, "adaptability": 0.3},
+            rng=rng
+        )
+        
+        if not should_revise_again:
+            ACTION_QUEUE.submit(Action(
+                type="signal_ready",
+                agent_id=agent.agent_id,
+                payload={"issue_id": issue_id}
+            ))
+            logger.info(f"[REVISE] {agent.agent_id} already revised, signaling ready (consistency check {score:.2f} vs roll {roll:.2f})")
+            return {"ack": True}
+    
+    # First revision or willing to revise again - evaluate feedback
+    should_revise, score, roll = weighted_trait_decision(
+        traits={
+            "adaptability": adaptability,
+            "self_interest": self_interest,
+            "risk_tolerance": risk_tolerance
+        },
+        weights={
+            "adaptability": 0.5,      # Main driver for accepting feedback
+            "self_interest": 0.3,     # Self-interest may resist change
+            "risk_tolerance": 0.2     # Willingness to take revision risk
+        },
+        rng=rng
+    )
+    
+    if not should_revise:
+        ACTION_QUEUE.submit(Action(
+            type="signal_ready",
+            agent_id=agent.agent_id,
+            payload={"issue_id": issue_id}
+        ))
+        logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO REVISION | Weights: adapt=0.5, self=0.3, risk=0.2")
+        return {"ack": True}
+    
+    # Decide revision size (delta) based on adaptability and risk tolerance
+    # Higher adaptability + risk tolerance = larger revisions
+    delta_factor = (adaptability * 0.6 + risk_tolerance * 0.4)
+    delta = max(0.1, min(1.0, 0.2 + delta_factor * 0.8))  # Range [0.1, 1.0]
+    
+    # Generate bigger revised content using lorem ipsum
+    def generate_lorem_content(rng, word_count=60):
+        words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
+                "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
+                "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
+                "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
+                "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
+                "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
+                "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
+                "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
+                "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
+                "augue", "feugait", "facilisi", "diam", "nonummy", "nibh", "euismod", "tincidunt"]
+        return " ".join(rng.choices(words, k=word_count))
+    
+    # Use traits to determine revision size for feedback-based revisions
+    thoroughness = profile.get("compliance", 0.5) + profile.get("consistency", 0.5)  # More methodical agents
+    verbosity = profile.get("sociability", 0.5)  # More social agents tend to be verbose
+    adaptability_boost = profile.get("adaptability", 0.5) * 0.5  # Adaptable agents may write more when responding to feedback
+    trait_factor = (thoroughness + verbosity + adaptability_boost) / 3.5  # Combine traits, normalize
+    
+    # Feedback revisions tend to be more substantial (30-90 words)
+    min_words = 30
+    max_words = 90
+    revision_word_count = int(min_words + (trait_factor * (max_words - min_words)))
+    
+    lorem_content = generate_lorem_content(rng, revision_word_count)
+    new_content = f"FEEDBACK-REVISED (Δ={delta:.2f}): {lorem_content}"
+    
+    # Submit revision action
+    ACTION_QUEUE.submit(Action(
+        type="revise",
+        agent_id=agent.agent_id,
+        payload={
+            "proposal_id": f"P{agent.agent_id}",  # Assuming consistent proposal ID format
+            "new_content": new_content,
+            "delta": delta,
+            "tick": tick,
+            "issue_id": issue_id
+        }
+    ))
+    
+    # Update memory
+    memory["has_revised"] = True
+    memory["revision_delta"] = delta
+    
+    logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → REVISING (Δ={delta:.2f}) | Weights: adapt=0.5, self=0.3, risk=0.2 [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
+    
     return {"ack": True}

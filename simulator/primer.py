@@ -46,8 +46,20 @@ class Primer:
 
     def _generate_lorem_proposal(self, seed: int) -> str:
         random.seed(seed)
-        words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur"]
-        return " ".join(random.choices(words, k=10))
+        words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
+                "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
+                "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
+                "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
+                "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
+                "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
+                "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
+                "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
+                "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
+                "augue", "feugait", "facilisi", "lorem", "ipsum", "dolor", "diam", "nonummy", "nibh"]
+        
+        # Generate 50-80 words for bigger proposals
+        word_count = random.randint(50, 80)
+        return " ".join(random.choices(words, k=word_count))
 
 def generate_base_profile(seed: int) -> dict:
     rng = random.Random(seed)

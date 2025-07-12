@@ -61,7 +61,7 @@ class AgentPool(BaseModel):
         return list(self.agents.keys())
 
 class Action(BaseModel):
-    type: Literal["submit_proposal", "feedback", "signal_ready"]
+    type: Literal["submit_proposal", "feedback", "signal_ready", "revise"]
     agent_id: str
     payload: Dict  # May be refined into specific models later
 
