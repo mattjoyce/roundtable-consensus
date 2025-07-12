@@ -125,12 +125,14 @@ class TheBureau:
             if action.type == "submit_proposal":
                 proposal=Proposal(**action.payload)
                 self.receive_proposal(action.agent_id, proposal)
-            elif action.type == "ready_signal":
+            elif action.type == "signal_ready":
                 self.signal_ready(action.agent_id)
             elif action.type == "feedback":
                 self.receive_feedback(action.agent_id, action.payload)
             elif action.type == "revise":
                 self.receive_revision(action.agent_id, action.payload)
+            elif action.type == "stake":
+                self.receive_stake(action.agent_id, action.payload)
 
 
     def receive_proposal(self, agent_id: str, proposal: Proposal):
@@ -465,4 +467,95 @@ class TheBureau:
             "version": new_version,
             "issue_id": issue_id,
             "tick": tick
-        }).info(f"Revision accepted from {agent_id}: {proposal_id} → {new_proposal_id} (Δ={delta}, cost={cost}CP)")  
+        }).info(f"Revision accepted from {agent_id}: {proposal_id} → {new_proposal_id} (Δ={delta}, cost={cost}CP)")
+    
+    def receive_stake(self, agent_id: str, payload: dict):
+        """Process a stake action from an agent - deduct CP and record stake."""
+        proposal_id = payload.get("proposal_id")
+        stake_amount = payload.get("stake_amount")
+        round_number = payload.get("round_number", 1)
+        tick = payload.get("tick", 0)
+        issue_id = payload.get("issue_id")
+        choice_reason = payload.get("choice_reason", "unknown")
+        
+        logger.bind(event_dict={
+            "event_type": "stake_received",
+            "agent_id": agent_id,
+            "proposal_id": proposal_id,
+            "stake_amount": stake_amount,
+            "round_number": round_number,
+            "issue_id": issue_id
+        }).info(f"Received stake from {agent_id}: {stake_amount} CP → {proposal_id} (Round {round_number})")
+        
+        # Validation 1: Check if there's an active issue
+        if not self.current_issue or self.current_issue.issue_id != issue_id:
+            logger.bind(event_dict={
+                "event_type": "stake_rejected",
+                "agent_id": agent_id,
+                "reason": "wrong_issue"
+            }).warning(f"Rejected stake from {agent_id}: Wrong or missing issue")
+            return
+        
+        # Validation 2: Check if agent is assigned to the issue
+        if not self.current_issue.is_assigned(agent_id):
+            logger.bind(event_dict={
+                "event_type": "stake_rejected",
+                "agent_id": agent_id,
+                "reason": "not_assigned"
+            }).warning(f"Rejected stake from {agent_id}: Not assigned to issue")
+            return
+        
+        # Validation 3: Check stake amount is positive
+        if not stake_amount or stake_amount <= 0:
+            logger.bind(event_dict={
+                "event_type": "stake_rejected",
+                "agent_id": agent_id,
+                "reason": "invalid_amount"
+            }).warning(f"Rejected stake from {agent_id}: Invalid stake amount {stake_amount}")
+            return
+        
+        # Validation 4: Check proposal_id is provided
+        if not proposal_id:
+            logger.bind(event_dict={
+                "event_type": "stake_rejected",
+                "agent_id": agent_id,
+                "reason": "missing_proposal_id"
+            }).warning(f"Rejected stake from {agent_id}: Missing proposal ID")
+            return
+        
+        # Attempt to deduct CP
+        deduct_success = self.creditmgr.attempt_deduct(
+            agent_id=agent_id,
+            amount=stake_amount,
+            reason=f"Conviction stake (Round {round_number})",
+            tick=tick,
+            issue_id=issue_id
+        )
+        
+        if deduct_success:
+            # Emit stake_recorded event
+            logger.bind(event_dict={
+                "event_type": "stake_recorded",
+                "agent_id": agent_id,
+                "proposal_id": proposal_id,
+                "stake_amount": stake_amount,
+                "round_number": round_number,
+                "choice_reason": choice_reason,
+                "tick": tick,
+                "issue_id": issue_id
+            }).info(f"Stake recorded: {agent_id} staked {stake_amount} CP on {proposal_id} (Round {round_number}, {choice_reason})")
+            
+            # Add credit burn event was already handled by attempt_deduct
+            
+        else:
+            # Emit insufficient_credit event (already handled by attempt_deduct)
+            logger.bind(event_dict={
+                "event_type": "stake_rejected",
+                "agent_id": agent_id,
+                "reason": "insufficient_credit",
+                "stake_amount": stake_amount,
+                "current_balance": self.creditmgr.get_balance(agent_id)
+            }).warning(f"Rejected stake from {agent_id}: Insufficient CP (has {self.creditmgr.get_balance(agent_id)}, needs {stake_amount})")
+        
+        # Mark agent as ready (regardless of success/failure)
+        self.signal_ready(agent_id)

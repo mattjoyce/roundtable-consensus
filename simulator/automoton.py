@@ -16,6 +16,8 @@ def handle_signal(agent: AgentActor, payload: dict):
         return handle_feedback(agent, payload)
     elif phase_type == "Revise":
         return handle_revise(agent, payload)
+    elif phase_type == "Stake":
+        return handle_stake(agent, payload)
     
     logger.debug(f"{agent.agent_id} received unhandled phase signal: {phase_type}")
     return {"ack": True}
@@ -424,5 +426,146 @@ def handle_revise(agent: AgentActor, payload: dict):
     memory["revision_delta"] = delta
     
     logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → REVISING (Δ={delta:.2f}) | Weights: adapt=0.5, self=0.3, risk=0.2 [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
+    
+    return {"ack": True}
+
+def handle_stake(agent: AgentActor, payload: dict):
+    """Handle STAKE phase signals for agents to decide on conviction-based staking."""
+    from models import Action
+    
+    issue_id = payload.get("issue_id", "unknown")
+    tick = payload.get("tick", 0)
+    round_number = payload.get("round_number", 1)
+    conviction_params = payload.get("conviction_params", {})
+    
+    rng = agent.rng
+    profile = agent.metadata.get("protocol_profile", {})
+    
+    # Get or initialize stake memory
+    memory = agent.memory.setdefault("stake", {})
+    stakes_this_round = memory.get(f"round_{round_number}_stakes", 0)
+    
+    # Agent traits used for staking decisions
+    self_interest = profile.get("self_interest", 0.5)
+    risk_tolerance = profile.get("risk_tolerance", 0.2)
+    compliance = profile.get("compliance", 0.9)
+    sociability = profile.get("sociability", 0.5)
+    initiative = profile.get("initiative", 0.5)
+    consistency = profile.get("consistency", 0.5)
+    adaptability = profile.get("adaptability", 0.5)
+    
+    # Get current balance from memory or assume it's tracked elsewhere
+    # For now, we'll use a simple heuristic based on traits
+    
+    # Decision 1: Should agent stake this round?
+    should_stake, score, roll = weighted_trait_decision(
+        traits={
+            "risk_tolerance": risk_tolerance,     # Higher = more likely to stake
+            "initiative": initiative,             # Higher = more proactive
+            "self_interest": self_interest,       # Higher = more motivated
+            "compliance": compliance              # Higher = follows protocol
+        },
+        weights={
+            "risk_tolerance": 0.4, 
+            "initiative": 0.3, 
+            "self_interest": 0.2, 
+            "compliance": 0.1
+        },
+        rng=rng
+    )
+    
+    if not should_stake:
+        # Signal ready without staking
+        ACTION_QUEUE.submit(Action(
+            type="signal_ready",
+            agent_id=agent.agent_id,
+            payload={"issue_id": issue_id}
+        ))
+        logger.info(f"[STAKE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO STAKE | Round {round_number} | Weights: risk=0.4, init=0.3, self=0.2, comp=0.1")
+        return {"ack": True}
+    
+    # Decision 2: Choose proposal to support
+    own_proposal_id = f"P{agent.agent_id}"
+    
+    # First check: stake on own proposal?
+    stake_on_own, score, roll = weighted_trait_decision(
+        traits={
+            "self_interest": self_interest,       # Higher = own proposal
+            "consistency": consistency,           # Higher = stick with own
+            "risk_tolerance": risk_tolerance      # Higher = confident in own
+        },
+        weights={
+            "self_interest": 0.5, 
+            "consistency": 0.3, 
+            "risk_tolerance": 0.2
+        },
+        rng=rng
+    )
+    
+    if stake_on_own:
+        target_proposal_id = own_proposal_id
+        proposal_choice_reason = "own_proposal"
+        logger.info(f"[STAKE] {agent.agent_id} proposal choice: own ({score:.2f} vs {roll:.2f}) | Weights: self=0.5, cons=0.3, risk=0.2")
+    else:
+        # Check: stake on others' proposals?
+        stake_on_others, score2, roll2 = weighted_trait_decision(
+            traits={
+                "sociability": sociability,          # Higher = support community
+                "adaptability": adaptability         # Higher = hedge bets
+            },
+            weights={
+                "sociability": 0.6, 
+                "adaptability": 0.4
+            },
+            rng=rng
+        )
+        
+        if stake_on_others:
+            # Sample from other agents' proposals
+            possible_proposals = [f"PAgent_{i}" for i in range(10) if f"Agent_{i}" != agent.agent_id]
+            target_proposal_id = rng.choice(possible_proposals) if possible_proposals else own_proposal_id
+            proposal_choice_reason = "sampled_other"
+            logger.info(f"[STAKE] {agent.agent_id} proposal choice: others ({score2:.2f} vs {roll2:.2f}) | Weights: soc=0.6, adapt=0.4")
+        else:
+            # Default to own if both fail
+            target_proposal_id = own_proposal_id
+            proposal_choice_reason = "default_own"
+            logger.info(f"[STAKE] {agent.agent_id} proposal choice: default to own (others failed: {score2:.2f} vs {roll2:.2f})")
+    
+    # Decision 3: Calculate stake amount (direct trait calculation)
+    # Simulate current balance (in real implementation, would get from credit manager)
+    estimated_balance = 100 - (round_number * 10)  # Simple balance estimation
+    
+    # Direct trait-driven stake percentage (up to 80% of balance)
+    stake_percentage = risk_tolerance * 0.8
+    stake_amount = max(1, int(estimated_balance * stake_percentage))
+    
+    # Submit stake action
+    ACTION_QUEUE.submit(Action(
+        type="stake",
+        agent_id=agent.agent_id,
+        payload={
+            "proposal_id": target_proposal_id,
+            "stake_amount": stake_amount,
+            "round_number": round_number,
+            "tick": tick,
+            "issue_id": issue_id,
+            "choice_reason": proposal_choice_reason
+        }
+    ))
+    
+    # Always signal ready after staking
+    ACTION_QUEUE.submit(Action(
+        type="signal_ready",
+        agent_id=agent.agent_id,
+        payload={"issue_id": issue_id}
+    ))
+    
+    # Update memory
+    memory[f"round_{round_number}_stakes"] = stakes_this_round + 1
+    memory[f"round_{round_number}_amount"] = stake_amount
+    memory[f"round_{round_number}_target"] = target_proposal_id
+    
+    logger.info(f"[STAKE] {agent.agent_id} → STAKING {stake_amount} CP | Round {round_number} | Target: {target_proposal_id} ({proposal_choice_reason}) | Stake %: {stake_percentage:.2f}")
     
     return {"ack": True}

@@ -124,6 +124,19 @@ class StakePhase(Phase):
             "round_number": self.round_number,
             "conviction_params": self.conviction_params
         }).info(f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}")
+        
+        issue_id = state.get("issue_id")
+        tick = state.get("tick")
+        
+        for agent in agents:
+            agent.on_signal({
+                "type": "Stake",
+                "round_number": self.round_number,
+                "conviction_params": self.conviction_params,
+                "tick": tick,
+                "issue_id": issue_id
+            })
+        
         return state
     
     def is_complete(self, state: Dict) -> bool:
