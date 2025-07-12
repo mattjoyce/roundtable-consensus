@@ -134,8 +134,10 @@ class TheBureau:
             if action.type == "submit_proposal":
                 proposal=Proposal(**action.payload)
                 self.receive_proposal(action.agent_id, proposal)
-            if action.type == "ready_signal":
+            elif action.type == "ready_signal":
                 self.signal_ready(action.agent_id)
+            elif action.type == "feedback":
+                self.receive_feedback(action.agent_id, action.payload)
 
 
     def receive_proposal(self, agent_id: str, proposal: Proposal):
@@ -243,3 +245,42 @@ class TheBureau:
             "agent_id": agent_id
         }).debug(f"Agent {agent_id} marked as Ready")
         self.ready_agents.add(agent_id)
+
+    def receive_feedback(self, agent_id: str, payload: dict):
+        target_pid = payload["target_proposal_id"]
+        comment = payload["comment"]
+        tick = payload["tick"]
+        issue_id = payload["issue_id"]
+        
+        if not self.current_issue or self.current_issue.issue_id != issue_id:
+            logger.warning(f"Rejected feedback from {agent_id}: wrong or missing issue")
+            return
+
+        if not self.current_issue.is_assigned(agent_id):
+            logger.warning(f"Rejected feedback from {agent_id}: not assigned to issue")
+            return
+
+        # Prevent self-feedback
+        if self.current_issue.agent_to_proposal_id.get(agent_id) == target_pid:
+            logger.warning(f"Rejected feedback from {agent_id}: cannot comment on own proposal")
+            return
+
+        # Feedback limit check
+        if self.current_issue.count_feedbacks_by(agent_id) >= self.current_consensus.gc.max_feedback_per_agent:
+            logger.warning(f"Rejected feedback from {agent_id}: exceeded max feedback entries")
+            return
+
+        if len(comment) > 500:
+            logger.warning(f"Rejected feedback from {agent_id}: comment too long")
+            return
+
+        # Deduct stake
+        if not self.creditmgr.attempt_deduct(agent_id, 5, "Feedback Stake", tick, issue_id):
+            logger.warning(f"Rejected feedback from {agent_id}: insufficient CP")
+            return
+
+        # Accept and record
+        self.current_issue.add_feedback(agent_id, target_pid, comment, tick)
+        self.signal_ready(agent_id)
+
+        logger.info(f"Feedback from {agent_id} → {target_pid}: {comment[:40]}...")

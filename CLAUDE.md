@@ -7,6 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Do not credit Claude in commits
 - NEVER add claude attribution to git commits
 - ALWAYS attribute commits to git user
+- Do not add files to gitr with out explicit permission
+- NEVER add CLAUDE.md
+- NEVER add include claude as the author
+- NEVER mention Claude Code in git actions
+- Never include CLAUDEmd - ignore CLAUDE.MD
 
 ## Common Commands
 

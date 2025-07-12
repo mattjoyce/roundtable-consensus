@@ -112,6 +112,7 @@ class Issue(BaseModel):
     agent_ids: List[str] = []  # Assigned agents
     proposals: List[Proposal] = []
     agent_to_proposal_id: Dict[str, str] = {}
+    feedback_log: List[Dict] = []
     metadata: Optional[Dict] = {}
     
     def is_assigned(self, agent_id: str) -> bool:
@@ -130,3 +131,16 @@ class Issue(BaseModel):
     def assign_agent_to_proposal(self, agent_id: str, proposal_id: str):
         """Assign an agent to a proposal."""
         self.agent_to_proposal_id[agent_id] = proposal_id
+    
+    def add_feedback(self, from_id: str, target_pid: str, comment: str, tick: int):
+        """Add feedback to the feedback log."""
+        self.feedback_log.append({
+            "from": from_id,
+            "to": target_pid,
+            "comment": comment,
+            "tick": tick
+        })
+
+    def count_feedbacks_by(self, agent_id: str) -> int:
+        """Count total feedbacks given by an agent."""
+        return sum(1 for fb in self.feedback_log if fb["from"] == agent_id)

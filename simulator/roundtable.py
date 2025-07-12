@@ -54,6 +54,19 @@ class FeedbackPhase(Phase):
             "cycle_number": self.cycle_number,
             "max_feedback_per_agent": self.max_feedback_per_agent
         }).info(f"Executing Feedback Phase [{self.phase_number}] for cycle {self.cycle_number} with max feedback per agent {self.max_feedback_per_agent}")
+        
+        issue_id = state.get("issue_id")
+        tick = state.get("tick")
+        
+        for agent in agents:
+            agent.on_signal({
+                "type": "Feedback",
+                "cycle_number": self.cycle_number,
+                "tick": tick,
+                "issue_id": issue_id,
+                "max_feedback": self.max_feedback_per_agent
+            })
+        
         return state
     
     def is_complete(self, state: Dict) -> bool:

@@ -2,22 +2,18 @@ from models import AgentActor, Action, ACTION_QUEUE, Proposal
 from loguru import logger
 import random
 
-def weighted_trait_decision(traits: dict, weights: dict, rng: random.Random, threshold: float = 0.5) -> tuple[bool, float, float]:
-    """
-    Compute a blended trait decision and return True if agent takes action.
-    Returns (decision, score, roll) for logging purposes.
-    """
-    assert abs(sum(weights.values()) - 1.0) < 1e-6, "Weights must sum to 1.0"
-    score = sum(traits[trait] * weight for trait, weight in weights.items())
+def weighted_trait_decision(traits, weights, rng):
+    score = sum(traits[t] * weights[t] for t in weights)
     roll = rng.random()
-    decision = roll < score * threshold
-    return decision, score, roll
+    return roll < score, score, roll
 
 def handle_signal(agent: AgentActor, payload: dict):
     phase_type = payload.get("type")
     
     if phase_type == "Propose":
         return handle_propose(agent, payload)
+    elif phase_type == "Feedback":
+        return handle_feedback(agent, payload)
     
     logger.debug(f"{agent.agent_id} received unhandled phase signal: {phase_type}")
     return {"ack": True}
@@ -45,8 +41,7 @@ def handle_propose(agent: AgentActor, payload: dict):
         should_submit, score, roll = weighted_trait_decision(
             traits={"initiative": initiative, "compliance": compliance},
             weights={"initiative": 0.8, "compliance": 0.2},
-            rng=rng,
-            threshold=1.0
+            rng=rng
         )
         
         logger.info(f"[DECISION] {agent.agent_id} first-time scored {score:.2f} vs roll {roll:.2f} "
@@ -69,8 +64,7 @@ def handle_propose(agent: AgentActor, payload: dict):
         should_retry, score, roll = weighted_trait_decision(
             traits={"compliance": compliance, "initiative": initiative},
             weights={"compliance": 0.7, "initiative": 0.3},
-            rng=rng,
-            threshold=0.8  # Lower threshold for retries
+            rng=rng
         )
         
         logger.info(f"[DECISION] {agent.agent_id} retry scored {score:.2f} vs roll {roll:.2f} "
@@ -117,4 +111,72 @@ def handle_propose(agent: AgentActor, payload: dict):
     elif decision_made == "hold":
         logger.debug(f"{agent.agent_id} is holding position. (tick {tick})")
 
+    return {"ack": True}
+
+def handle_feedback(agent: AgentActor, payload: dict):
+    from models import Action
+    issue_id = payload["issue_id"]
+    max_feedback = payload.get("max_feedback", 3)
+    tick = payload.get("tick", 0)
+    
+    rng = agent.rng
+    own_id = agent.agent_id
+    profile = agent.metadata.get("protocol_profile", {})
+    
+    # Get or initialize feedback memory
+    memory = agent.memory.setdefault("feedback", {})
+    feedback_given = memory.get("feedback_given", 0)
+    
+    # Check if already at quota
+    if feedback_given >= max_feedback:
+        logger.info(f"[FEEDBACK] {agent.agent_id} already at quota ({feedback_given}/{max_feedback})")
+        return {"ack": True}
+    
+    # Use agent traits to determine feedback intent
+    sociability = profile.get("sociability", 0.5)
+    initiative = profile.get("initiative", 0.5)
+    compliance = profile.get("compliance", 0.9)
+    
+    # Decide if agent will provide feedback this round
+    should_give_feedback, score, roll = weighted_trait_decision(
+        traits={"sociability": sociability, "initiative": initiative, "compliance": compliance},
+        weights={"sociability": 0.5, "initiative": 0.3, "compliance": 0.2},
+        rng=rng
+    )
+    
+    if not should_give_feedback:
+        logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO FEEDBACK | Weights: soc=0.5, init=0.3, comp=0.2")
+        return {"ack": True}
+    
+    # Calculate how many feedbacks to give this round
+    remaining_quota = max_feedback - feedback_given
+    max_this_round = min(remaining_quota, 3)
+    
+    # Scale with sociability or use random within bounds
+    scaled = int(round(max_this_round * sociability))
+    num_feedbacks = max(1, min(scaled, max_this_round))
+    
+    logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → PROVIDING {num_feedbacks} FEEDBACK(S)")
+
+    # Sample target proposal IDs (fake for now - excluding own)
+    possible_targets = [f"PAgent_{i}" for i in range(10) if f"Agent_{i}" != own_id]
+    targets = rng.sample(possible_targets, min(num_feedbacks, len(possible_targets)))
+    
+    # Submit feedback actions
+    for pid in targets:
+        ACTION_QUEUE.submit(Action(
+            type="feedback",
+            agent_id=own_id,
+            payload={
+                "target_proposal_id": pid,
+                "comment": f"Agent {own_id} thinks {pid} lacks clarity.",
+                "tick": tick,
+                "issue_id": issue_id
+            }
+        ))
+    
+    # Update memory to track feedback count
+    memory["feedback_given"] = feedback_given + len(targets)
+    
+    logger.info(f"[FEEDBACK] {agent.agent_id} submitted {len(targets)} feedbacks | Total: {memory['feedback_given']}/{max_feedback}")
     return {"ack": True}

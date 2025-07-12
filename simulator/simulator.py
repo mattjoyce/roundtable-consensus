@@ -98,7 +98,7 @@ def main():
         random.seed(pool_seed)
         # Ensure pool is 3-5x larger than num_agents for meaningful selection
         min_pool_size = max(6, args.num_agents * 3)  # At least 3x factor, minimum 6
-        max_pool_size = min(49, args.num_agents * 5)  # Up to 5x factor, maximum 49
+        max_pool_size = max(min_pool_size, args.num_agents * 5)  # Up to 5x factor, ensure max >= min
         pool_size = random.randint(min_pool_size, max_pool_size)
         agents = {
             f"Agent_{i}": AgentActor(
