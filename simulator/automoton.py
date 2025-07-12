@@ -127,15 +127,29 @@ def handle_feedback(agent: AgentActor, payload: dict):
     memory = agent.memory.setdefault("feedback", {})
     feedback_given = memory.get("feedback_given", 0)
     
-    # Check if already at quota
-    if feedback_given >= max_feedback:
-        logger.info(f"[FEEDBACK] {agent.agent_id} already at quota ({feedback_given}/{max_feedback})")
-        return {"ack": True}
-    
     # Use agent traits to determine feedback intent
     sociability = profile.get("sociability", 0.5)
     initiative = profile.get("initiative", 0.5)
     compliance = profile.get("compliance", 0.9)
+    
+    # Check if already at quota
+    if feedback_given >= max_feedback:
+        # Store in memory that agent has reached quota
+        memory["quota_reached"] = True
+        
+        # Use compliance trait to decide whether to respect quota
+        should_respect_quota, compliance_score, compliance_roll = weighted_trait_decision(
+            traits={"compliance": compliance},
+            weights={"compliance": 1.0},
+            rng=rng
+        )
+        
+        if should_respect_quota:
+            logger.info(f"[FEEDBACK] {agent.agent_id} already at quota ({feedback_given}/{max_feedback}) - respects limit (compliance {compliance_score:.2f} vs roll {compliance_roll:.2f})")
+            return {"ack": True}
+        else:
+            logger.info(f"[FEEDBACK] {agent.agent_id} already at quota ({feedback_given}/{max_feedback}) - attempts anyway (compliance {compliance_score:.2f} vs roll {compliance_roll:.2f})")
+            # Continue to decision logic below
     
     # Decide if agent will provide feedback this round
     should_give_feedback, score, roll = weighted_trait_decision(
@@ -152,11 +166,15 @@ def handle_feedback(agent: AgentActor, payload: dict):
     remaining_quota = max_feedback - feedback_given
     max_this_round = min(remaining_quota, 3)
     
-    # Scale with sociability or use random within bounds
-    scaled = int(round(max_this_round * sociability))
-    num_feedbacks = max(1, min(scaled, max_this_round))
-    
-    logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → PROVIDING {num_feedbacks} FEEDBACK(S)")
+    # If agent is at quota, they may still try 1 feedback (will be rejected)
+    if remaining_quota <= 0:
+        num_feedbacks = 1
+        logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → OVER-QUOTA ATTEMPT (will be rejected)")
+    else:
+        # Scale with sociability or use random within bounds
+        scaled = int(round(max_this_round * sociability))
+        num_feedbacks = max(1, min(scaled, max_this_round))
+        logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → PROVIDING {num_feedbacks} FEEDBACK(S)")
 
     # Sample target proposal IDs (fake for now - excluding own)
     possible_targets = [f"PAgent_{i}" for i in range(10) if f"Agent_{i}" != own_id]
@@ -175,8 +193,10 @@ def handle_feedback(agent: AgentActor, payload: dict):
             }
         ))
     
-    # Update memory to track feedback count
-    memory["feedback_given"] = feedback_given + len(targets)
-    
-    logger.info(f"[FEEDBACK] {agent.agent_id} submitted {len(targets)} feedbacks | Total: {memory['feedback_given']}/{max_feedback}")
+    # Update memory to track feedback count (only if within quota)
+    if remaining_quota > 0:
+        memory["feedback_given"] = feedback_given + len(targets)
+        logger.info(f"[FEEDBACK] {agent.agent_id} submitted {len(targets)} feedbacks | Total: {memory['feedback_given']}/{max_feedback}")
+    else:
+        logger.info(f"[FEEDBACK] {agent.agent_id} attempted {len(targets)} over-quota feedbacks | Still at: {feedback_given}/{max_feedback}")
     return {"ack": True}

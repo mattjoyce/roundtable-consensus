@@ -13,7 +13,6 @@ class TheBureau:
         initial_balances = {aid: agent.initial_balance for aid, agent in self.agent_pool.agents.items()}
         self.creditmgr = CreditManager(initial_balances=initial_balances)
         self.current_issue: Optional[Issue] = None
-        self.ready_agents: set = set()  # Track agents who submitted in current PROPOSE phase
         self.proposals_this_phase: set = set()  # Track proposals submitted in current PROPOSE phase
         self.assigned_agents: set = set()  # Track agents assigned to the current issue
 
@@ -50,7 +49,6 @@ class TheBureau:
         self.current_consensus = consensus
         
         # Reset ready tracking for new consensus
-        self.ready_agents.clear()
         self.proposals_this_phase.clear()
 
 
@@ -77,7 +75,7 @@ class TheBureau:
                     "phase_number": current_phase.phase_number,
                     "issue_id": self.current_issue.issue_id if self.current_issue else None
                 }).warning(f"Timeout {current_phase.phase_type} Phase [{current_phase.phase_number}] at tick {consensus.state['tick']}")
-                unready = self.get_unready_agents()
+                unready = self.current_consensus.get_unready_agents()
 
                 if len(unready) != 0:
                     proposal= self.create_no_action_proposal(
@@ -100,7 +98,7 @@ class TheBureau:
 
 
 
-            # if we transistioned to a new phase, reset ready agents
+            # Log phase transitions
             if consensus.state["phase_tick"] == 1:
                 logger.bind(event_dict={
                     "event_type": "phase_transition",
@@ -110,10 +108,6 @@ class TheBureau:
                     "issue_id": self.current_issue.issue_id if self.current_issue else None
                 }).info(f"Transitioned to new phase: {consensus.get_current_phase().phase_number}")
                 logger.debug(f"Phase Tick: {consensus.state['phase_tick']}")
-                self.ready_agents.clear()
-
-            #share ready agents with consensus state
-            consensus.state["all_agents_ready"] = not self.get_unready_agents()
             
             logger.bind(event_dict={
                 "event_type": "consensus_tick",
@@ -123,12 +117,6 @@ class TheBureau:
 
         return consensus._summarize_results()
     
-    def get_unready_agents(self) -> set:
-        return set(self.assigned_agents) - self.ready_agents
-    
-
-
-
     def _process_pending_actions(self):
         for action in ACTION_QUEUE.drain():
             if action.type == "submit_proposal":
@@ -244,7 +232,7 @@ class TheBureau:
             "event_type": "agent_ready",
             "agent_id": agent_id
         }).debug(f"Agent {agent_id} marked as Ready")
-        self.ready_agents.add(agent_id)
+        self.current_consensus.set_agent_ready(agent_id)
 
     def receive_feedback(self, agent_id: str, payload: dict):
         target_pid = payload["target_proposal_id"]

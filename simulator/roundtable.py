@@ -247,8 +247,11 @@ class Consensus:
         self.ledger = []
         self.phases = generate_phases(global_config)
         self.current_phase_index = 0
-
+        self.agent_ready: Dict[str, bool] = {}  # agent_id → True/False
         
+        # Initialize agent readiness
+        for agent_id in self.rc.agent_ids:
+            self.agent_ready[agent_id] = False
 
     def _init_state(self):
         return {
@@ -282,6 +285,8 @@ class Consensus:
             self.state["phase_start_tick"] = self.state["tick"]
             self.state["phase_tick"] = 1
             self.state["ready_agents"] = set()
+            # Reset agent readiness for new phase
+            self.agent_ready = {aid: False for aid in self.agent_ready}
         else:
             self.state["phase_tick"] += 1
 
@@ -293,7 +298,7 @@ class Consensus:
         }).debug(f"Tick {self.state['tick']} — Phase {self.state['current_phase']} (Phase Tick {self.state['phase_tick']})")
 
         # Phase complete: skip execution, advance phase
-        if self.state["all_agents_ready"]:
+        if self.all_agents_ready:
             logger.bind(event_dict={
                 "event_type": "phase_transition",
                 "tick": self.state['tick'],
@@ -324,7 +329,18 @@ class Consensus:
         current_tick = self.state["tick"]
         start_tick = self.state["phase_start_tick"]
         phase = self.get_current_phase()
-        return (current_tick - start_tick) == phase.max_think_ticks  
+        return (current_tick - start_tick) == phase.max_think_ticks
+    
+    def set_agent_ready(self, agent_id: str):
+        if agent_id in self.agent_ready:
+            self.agent_ready[agent_id] = True
+    
+    def get_unready_agents(self) -> List[str]:
+        return [aid for aid, ready in self.agent_ready.items() if not ready]
+    
+    @property
+    def all_agents_ready(self) -> bool:
+        return all(self.agent_ready.values())  
 
     def _summarize_results(self):
         phase_summary = []
