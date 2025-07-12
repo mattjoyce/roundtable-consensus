@@ -86,13 +86,16 @@ class TheBureau:
                     self.current_issue.add_proposal(proposal)
                     #link unready agent to no action proposal
                     for agent_id in unready:
-                        self.creditmgr.stake_to_proposal(
-                            agent_id=agent_id,
-                            proposal_id=proposal.proposal_id,
-                            amount=self.current_consensus.gc.proposal_self_stake,
-                            tick=self.current_consensus.state["tick"],
-                            issue_id=self.current_issue.issue_id
-                        )
+                        # Only PROPOSE phase requires proposal submission cost
+                        if current_phase.phase_type == "PROPOSE":
+                            self.creditmgr.stake_to_proposal(
+                                agent_id=agent_id,
+                                proposal_id=proposal.proposal_id,
+                                amount=self.current_consensus.gc.proposal_self_stake,
+                                tick=self.current_consensus.state["tick"],
+                                issue_id=self.current_issue.issue_id
+                            )
+                        
                         self.current_issue.assign_agent_to_proposal(agent_id, proposal.proposal_id)
                         self.signal_ready(agent_id)
 
