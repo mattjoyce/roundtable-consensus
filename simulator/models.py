@@ -1,6 +1,7 @@
 # models.py
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Optional, Literal
+from typing import List, Dict, Optional, Literal, Any
+import random
 from loguru import logger
 
 class Proposal(BaseModel):
@@ -17,70 +18,30 @@ class Agent(BaseModel):
     metadata: Optional[Dict[str, str]] = {}
 
 class AgentActor(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
     agent_id: str
     initial_balance: int
-    metadata: Optional[Dict[str, str|int]] = {}
+    metadata: Optional[Dict[str, Any]] = {}
     seed: Optional[int] = None  # Optional seed for reproducibility
+    rng: Optional[random.Random] = None
+    memory: Dict[str, Any] = {}
 
     def on_signal(self, payload: Dict[str, str|int]) -> Optional[dict]:
         """Handle signals sent to the agent."""
-        # This method can be overridden by subclasses to implement specific behavior
-        self.automoton(payload)
-        return {"ack": True}
+        from automoton import handle_signal
+        return handle_signal(self, payload)
 
     def clone(self) -> 'AgentActor':
+        new_rng = random.Random(self.seed) if self.seed is not None else None
         return AgentActor(
             agent_id=self.agent_id,
             initial_balance=self.initial_balance,
             metadata=self.metadata.copy() if self.metadata else {},
-            seed=self.seed
+            seed=self.seed,
+            rng=new_rng,
+            memory={}
         )
-    
-    def automoton(self, payload: Dict[str, str|int]) -> Optional[dict]:
-        """Simulate Agents Behavior"""
-        # This method can be overridden by subclasses to implement specific behavior
-        if payload.get("type") == "Propose":
-            # Handle proposal logic here
-            logger.debug(f"Agent {self.agent_id} received proposal signal.")
-
-            if int(self.metadata["proposal_submission_likelihood"]) > 50:
-                # create a proposal
-                proposal = Proposal(
-                    proposal_id=f"P{self.agent_id}",
-                    content="Sample proposal content",
-                    agent_id=self.agent_id,
-                    issue_id=payload.get("issue_id", "default_issue"),
-                    metadata={"example_key": "example_value"},
-                    tick=0
-                )
-                # add message to ACTION_QUEUE
-                ACTION_QUEUE.submit(Action(
-                    type="submit_proposal",
-                    agent_id=self.agent_id,
-                    payload=proposal.model_dump()
-                ))
-            else:
-                # for agent not submitting half will signal ready, the other will default.
-                if int(self.metadata["proposal_submission_likelihood"]) % 2 == 0:
-                    logger.debug(f"Agent {self.agent_id} signaling ready without proposal.")
-                    ACTION_QUEUE.submit(Action(
-                        type="signal_ready",
-                        agent_id=self.agent_id,
-                        payload={"issue_id": payload.get("issue_id", "default_issue")}
-                    ))
-
-        elif payload.get("type") == "Feedback":
-            # Handle feedback logic here
-            logger.debug(f"Agent {self.agent_id} received feedback signal.")
-        elif payload.get("type") == "Revise":
-            # Handle revision logic here
-            logger.debug(f"Agent {self.agent_id} received revise signal.")
-        elif payload.get("type") == "Finalize":
-            # Handle finalization logic here
-            logger.debug(f"Agent {self.agent_id} received finalize signal.")
-        else:            
-            logger.warning(f"Agent {self.agent_id} received unknown signal: {payload}")
-        return {"ack": True}
 
 class AgentPool(BaseModel):
     model_config = ConfigDict(frozen=True)
