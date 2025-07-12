@@ -116,6 +116,7 @@ class SimulationLogger:
     def _get_log_level(self) -> str:
         """Map verbosity level to loguru level."""
         level_map = {
+            -1: "ERROR",   # Quiet mode - suppress most console output
             0: "WARNING",
             1: "INFO",
             2: "DEBUG", 
