@@ -86,8 +86,15 @@ class TheBureau:
                         issue_id=self.current_issue.issue_id
                     )
                     self.current_issue.add_proposal(proposal)
-                    #link unready ahent to no action proposal
+                    #link unready agent to no action proposal
                     for agent_id in unready:
+                        self.creditmgr.stake_to_proposal(
+                            agent_id=agent_id,
+                            proposal_id=proposal.proposal_id,
+                            amount=self.current_consensus.gc.proposal_self_stake,
+                            tick=self.current_consensus.state["tick"],
+                            issue_id=self.current_issue.issue_id
+                        )
                         self.current_issue.assign_agent_to_proposal(agent_id, proposal.proposal_id)
                         self.signal_ready(agent_id)
 
@@ -186,6 +193,23 @@ class TheBureau:
         # Store proposal in Issue 
         self.current_issue.add_proposal(proposal)
         self.current_issue.assign_agent_to_proposal(agent_id, proposal.proposal_id)
+        
+        # Stake CP to proposal
+        stake_success = self.creditmgr.stake_to_proposal(
+            agent_id=agent_id,
+            proposal_id=proposal.proposal_id,
+            amount=self.current_consensus.gc.proposal_self_stake,
+            tick=tick,
+            issue_id=issue_id
+        )
+
+        if not stake_success:
+            logger.bind(event_dict={
+                "event_type": "proposal_rejected",
+                "agent_id": agent_id,
+                "reason": "insufficient_cp_for_stake"
+            }).warning(f"Rejected proposal from {agent_id}: Not enough CP to stake")
+            return
         
         # Mark agent as ready and track proposal submission
         self.signal_ready(agent_id)

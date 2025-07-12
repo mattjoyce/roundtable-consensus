@@ -6,6 +6,7 @@ class CreditManager:
         # Map agent_id -> current CP balance
         self.balances = dict(initial_balances)  # Make a copy
         self.events = []  # Burn / Transfer / Rejection logs
+        self.proposal_stakes = {}  # proposal_id -> staked amount
         
         # Log credit manager initialization
         logger.bind(event_dict={
@@ -98,6 +99,20 @@ class CreditManager:
 
     def get_events(self) -> list:
         return list(self.events)
+
+    def stake_to_proposal(self, agent_id: str, proposal_id: str, amount: int, tick: int, issue_id: str) -> bool:
+        if self.attempt_deduct(agent_id, amount, "Proposal Self Stake", tick, issue_id):
+            self.proposal_stakes[proposal_id] = amount
+            logger.bind(event_dict={
+                "event_type": "stake_recorded",
+                "agent_id": agent_id,
+                "proposal_id": proposal_id,
+                "amount": amount,
+                "tick": tick,
+                "issue_id": issue_id
+            }).info(f"Staked {amount} CP from {agent_id} to proposal {proposal_id}")
+            return True
+        return False
 
     #return events as a reported dict
     def get_reported_events(self) -> list:
