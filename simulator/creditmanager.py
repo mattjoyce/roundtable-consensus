@@ -114,6 +114,26 @@ class CreditManager:
             return True
         return False
 
+    def transfer_stake(self, old_proposal_id: str, new_proposal_id: str, tick: int, issue_id: str) -> bool:
+        """Transfer stake from old proposal to new proposal (for versioned revisions)."""
+        if old_proposal_id in self.proposal_stakes:
+            amount = self.proposal_stakes[old_proposal_id]
+            # Remove stake from old proposal
+            del self.proposal_stakes[old_proposal_id]
+            # Add stake to new proposal
+            self.proposal_stakes[new_proposal_id] = amount
+            
+            logger.bind(event_dict={
+                "event_type": "stake_transferred",
+                "old_proposal_id": old_proposal_id,
+                "new_proposal_id": new_proposal_id,
+                "amount": amount,
+                "tick": tick,
+                "issue_id": issue_id
+            }).info(f"Transferred stake of {amount} CP from {old_proposal_id} to {new_proposal_id}")
+            return True
+        return False
+
     #return events as a reported dict
     def get_reported_events(self) -> list:
         reported = []

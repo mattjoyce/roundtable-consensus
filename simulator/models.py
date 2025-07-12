@@ -11,6 +11,9 @@ class Proposal(BaseModel):
     agent_id: str
     issue_id: str
     metadata: Optional[Dict[str, str]] = {}
+    version: int = 1
+    parent_id: Optional[str] = None
+    active: bool = True
 
 class Agent(BaseModel):
     agent_id: str

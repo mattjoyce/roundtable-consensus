@@ -279,7 +279,7 @@ class TheBureau:
         logger.info(f"Feedback from {agent_id} → {target_pid}: {comment[:40]}...")
 
     def receive_revision(self, agent_id: str, payload: dict):
-        """Process a revision action from an agent."""
+        """Process a revision action from an agent - creates versioned proposals."""
         proposal_id = payload.get("proposal_id")
         new_content = payload.get("new_content")
         delta = payload.get("delta")
@@ -312,17 +312,31 @@ class TheBureau:
             }).warning(f"Rejected revision from {agent_id}: Not assigned to issue")
             return
         
-        # Validation 3: Check if proposal is owned by agent
+        # Validation 3: Check if proposal is owned by agent (handle version mismatch)
         agent_proposal_id = self.current_issue.agent_to_proposal_id.get(agent_id)
+        
+        # If agent submitted base proposal ID but has versioned ID, use the current version
         if agent_proposal_id != proposal_id:
-            logger.bind(event_dict={
-                "event_type": "revision_rejected",
-                "agent_id": agent_id,
-                "reason": "not_proposal_owner",
-                "expected_proposal_id": agent_proposal_id,
-                "received_proposal_id": proposal_id
-            }).warning(f"Rejected revision from {agent_id}: Not owner of proposal {proposal_id}")
-            return
+            # Check if the proposal_id is a base version of the agent's current proposal
+            base_proposal_id = f"P{agent_id}"
+            if proposal_id == base_proposal_id and agent_proposal_id and agent_proposal_id.startswith(base_proposal_id):
+                # Agent submitted base ID but has versioned ID - use the versioned one
+                proposal_id = agent_proposal_id
+                logger.bind(event_dict={
+                    "event_type": "revision_id_corrected",
+                    "agent_id": agent_id,
+                    "submitted_id": payload.get("proposal_id"),
+                    "corrected_id": proposal_id
+                }).info(f"Corrected proposal ID for {agent_id}: {payload.get('proposal_id')} → {proposal_id}")
+            else:
+                logger.bind(event_dict={
+                    "event_type": "revision_rejected",
+                    "agent_id": agent_id,
+                    "reason": "not_proposal_owner",
+                    "expected_proposal_id": agent_proposal_id,
+                    "received_proposal_id": proposal_id
+                }).warning(f"Rejected revision from {agent_id}: Not owner of proposal {proposal_id}")
+                return
         
         # Validation 4: Check revision delta and new content are present
         if not new_content or delta is None or delta < 0.1 or delta > 1.0:
@@ -354,31 +368,75 @@ class TheBureau:
             }).warning(f"Rejected revision from {agent_id}: Insufficient CP for cost {cost}")
             return
         
-        # Find and update the proposal
-        proposal_found = False
+        # Find the current active proposal to revise
+        old_proposal = None
         for proposal in self.current_issue.proposals:
-            if proposal.proposal_id == proposal_id:
-                # Update proposal content and metadata
-                proposal.content = new_content
-                proposal.tick = tick  # Update LastUpdatedTick
-                
-                # Increment revision number in metadata
-                current_revision = int(proposal.metadata.get("RevisionNumber", "0"))
-                proposal.metadata["RevisionNumber"] = str(current_revision + 1)
-                proposal.metadata["LastRevisionDelta"] = str(delta)
-                
-                proposal_found = True
+            if proposal.proposal_id == proposal_id and proposal.active:
+                old_proposal = proposal
                 break
         
-        if not proposal_found:
+        if not old_proposal:
             logger.bind(event_dict={
                 "event_type": "revision_rejected",
                 "agent_id": agent_id,
-                "reason": "proposal_not_found"
-            }).warning(f"Rejected revision from {agent_id}: Proposal {proposal_id} not found")
+                "reason": "active_proposal_not_found"
+            }).warning(f"Rejected revision from {agent_id}: Active proposal {proposal_id} not found")
             return
         
-        # Log a Revision event to the ledger (following CreditManager pattern)
+        # Create versioned proposal - extract base ID to avoid nested versions
+        new_version = old_proposal.version + 1
+        
+        # Extract base proposal ID (remove any existing @vN suffix)
+        if "@v" in proposal_id:
+            base_proposal_id = proposal_id.split("@v")[0]
+        else:
+            base_proposal_id = proposal_id
+            
+        new_proposal_id = f"{base_proposal_id}@v{new_version}"
+        
+        # Mark old proposal as inactive
+        old_proposal.active = False
+        
+        # Create new versioned proposal
+        from models import Proposal
+        new_proposal = Proposal(
+            proposal_id=new_proposal_id,
+            content=new_content,
+            agent_id=agent_id,
+            issue_id=issue_id,
+            tick=tick,
+            metadata={
+                "RevisionNumber": str(new_version),
+                "LastRevisionDelta": str(delta),
+                "origin": "revision"
+            },
+            version=new_version,
+            parent_id=proposal_id,
+            active=True
+        )
+        
+        # Add new proposal to issue
+        self.current_issue.proposals.append(new_proposal)
+        
+        # Update agent assignment to new version
+        self.current_issue.agent_to_proposal_id[agent_id] = new_proposal_id
+        
+        # Transfer stake from old to new proposal
+        stake_transferred = self.creditmgr.transfer_stake(
+            old_proposal_id=proposal_id,
+            new_proposal_id=new_proposal_id,
+            tick=tick,
+            issue_id=issue_id
+        )
+        
+        if not stake_transferred:
+            logger.bind(event_dict={
+                "event_type": "revision_warning",
+                "agent_id": agent_id,
+                "reason": "no_stake_to_transfer"
+            }).warning(f"No stake found to transfer from {proposal_id} to {new_proposal_id}")
+        
+        # Log a Revision event to the ledger with version lineage
         revision_event = {
             "type": "Revision",
             "agent_id": agent_id,
@@ -386,9 +444,11 @@ class TheBureau:
             "reason": f"Proposal revision (Δ={delta})",
             "tick": tick,
             "issue_id": issue_id,
-            "proposal_id": proposal_id,
+            "parent_id": proposal_id,
+            "new_proposal_id": new_proposal_id,
             "delta": delta,
-            "revision_number": proposal.metadata["RevisionNumber"]
+            "revision_number": new_version,
+            "cp_cost": cost
         }
         self.creditmgr.events.append(revision_event)
         
@@ -398,10 +458,11 @@ class TheBureau:
         logger.bind(event_dict={
             "event_type": "revision_accepted",
             "agent_id": agent_id,
-            "proposal_id": proposal_id,
+            "parent_id": proposal_id,
+            "new_proposal_id": new_proposal_id,
             "delta": delta,
             "cost": cost,
-            "revision_number": proposal.metadata["RevisionNumber"],
+            "version": new_version,
             "issue_id": issue_id,
             "tick": tick
-        }).info(f"Revision accepted from {agent_id}: {proposal_id} (Δ={delta}, cost={cost}CP)")  
+        }).info(f"Revision accepted from {agent_id}: {proposal_id} → {new_proposal_id} (Δ={delta}, cost={cost}CP)")  
