@@ -7,6 +7,7 @@ from models import GlobalConfig, AgentActor, AgentPool, Issue, ActionQueue, Acti
 from primer import Primer
 from thebureau import TheBureau
 from simlog import setup_logging, generate_sim_id
+from config import get_config_with_args
 from loguru import logger
 
 def parse_arguments():
@@ -63,12 +64,22 @@ def parse_arguments():
         help="Quiet mode: suppress verbose logging, show only summary"
     )
     
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="config.yaml",
+        help="Configuration file path (default: config.yaml)"
+    )
+    
     return parser.parse_args()
 
 
 def main():
     """Main simulation runner."""
     args = parse_arguments()
+    
+    # Load configuration with CLI argument precedence
+    config = get_config_with_args(args.config, args)
     
     # Generate or use provided simulation ID
     sim_id = args.sim_id if args.sim_id else generate_sim_id()
@@ -78,26 +89,31 @@ def main():
     sim_logger = setup_logging(sim_id, effective_verbosity)
     
     try:
+        # Extract configuration values
+        pool_seed = config['simulation']['pool_seed']
+        run_seed = config['simulation']['run_seed']
+        num_agents = config['simulation']['num_agents']
+        max_scenarios = config['simulation']['max_scenarios']
+        
         # Log simulation parameters
         logger.info("Starting Round Table Consensus Simulation")
         logger.bind(event_dict={
             "event_type": "simulation_start",
             "sim_id": sim_id,
-            "pool_seed": args.pool_seed,
-            "run_seed": args.run_seed,
-            "max_scenarios": args.max_scenarios,
-            "num_agents": args.num_agents,
-            "verbosity": args.verbose
+            "pool_seed": pool_seed,
+            "run_seed": run_seed,
+            "max_scenarios": max_scenarios,
+            "num_agents": num_agents,
+            "verbosity": args.verbose,
+            "config_file": args.config
         }).info("Simulation parameters configured")
         
-        # Generate agent pool with 5 < n < 50 agents (seeded)
-        pool_seed = args.pool_seed
-        run_seed = args.run_seed
+        # Generate agent pool with configurable settings
         logger.info(f"Using pool seed: {pool_seed}, run seed: {run_seed}")
 
         random.seed(pool_seed)
-        # Ensure pool is 3-5x larger than num_agents for meaningful selection
-        pool_size = max(100, args.num_agents * 10)  # 10x the required number or 100, whichever is greater
+        # Pool size from configuration
+        pool_size = max(config['agent_pool']['min_size'], num_agents * config['agent_pool']['size_multiplier'])
         
         # Import archetypes from primer
         from primer import ARCHETYPES
@@ -112,19 +128,22 @@ def main():
             agent_id = f"Agent_{archetype}_{archetype_index}"
             agents[agent_id] = AgentActor(
                 agent_id=agent_id,
-                initial_balance=random.randint(0, 300),  # Random initial balance for variety
+                initial_balance=random.randint(
+                    config['agent_pool']['balance_range']['min'],
+                    config['agent_pool']['balance_range']['max']
+                ),
                 metadata={
                     "base_archetype": archetype  # Store the intended archetype
                 },
                 seed=pool_seed + i  # Ensure unique seed for each agent
             )
         agent_pool = AgentPool(agents=agents)
-        pool_factor = round(pool_size / args.num_agents, 1)
-        logger.info(f"Generated agent pool with {pool_size} agents ({pool_factor}x factor for {args.num_agents} selected, seed: {pool_seed})")
+        pool_factor = round(pool_size / num_agents, 1)
+        logger.info(f"Generated agent pool with {pool_size} agents ({pool_factor}x factor for {num_agents} selected, seed: {pool_seed})")
         
         # Validate pool size is sufficient
-        if pool_size < args.num_agents:
-            raise ValueError(f"Agent pool size ({pool_size}) must be >= num_agents ({args.num_agents})")
+        if pool_size < num_agents:
+            raise ValueError(f"Agent pool size ({pool_size}) must be >= num_agents ({num_agents})")
         
         # Extract the balanced balances from the agent pool
         initial_balances = {aid: agent.initial_balance for aid, agent in agents.items()}
@@ -134,7 +153,6 @@ def main():
         # Track simulation round timings
         round_durations: List[float] = []
         
-        max_scenarios = args.max_scenarios
         for i in range(max_scenarios):
             scenario_seed = run_seed + i
             if not args.quiet:
@@ -151,28 +169,35 @@ def main():
             }).info(f"Starting scenario {i + 1}")
             
             gc = GlobalConfig(
-                assignment_award=100,  # Fixed award for assignment
-                max_feedback_per_agent=3,
-                feedback_stake=5,
-                proposal_self_stake=50,
-                revision_cycles=random.randint(1, 3),  # Randomize revision cycles for variety
-                staking_rounds=random.randint(5, 7),  # Randomize staking rounds
-                conviction_params={
-                    "MaxMultiplier": 2.0,
-                    "TargetFraction": 0.98
-                },
+                assignment_award=config['consensus']['assignment_award'],
+                max_feedback_per_agent=config['consensus']['max_feedback_per_agent'],
+                feedback_stake=config['consensus']['feedback_stake'],
+                proposal_self_stake=config['consensus']['proposal_self_stake'],
+                revision_cycles=random.randint(
+                    config['consensus']['revision_cycles']['min'],
+                    config['consensus']['revision_cycles']['max']
+                ),
+                staking_rounds=random.randint(
+                    config['consensus']['staking_rounds']['min'],
+                    config['consensus']['staking_rounds']['max']
+                ),
+                conviction_params=config['consensus']['conviction_params'],
                 agent_pool=agent_pool
             )
             
             primer = Primer(gc)
-            rc = primer.generate_run_config(seed=run_seed, num_agents=args.num_agents)
+            rc = primer.generate_run_config(
+                seed=run_seed, 
+                num_agents=num_agents,
+                trait_config=config['traits']
+            )
             
             # Create a sample issue for the simulation
             issue = Issue(
                 issue_id=f"Issue_{scenario_seed}",
-                problem_statement="Sample problem statement for the issue.",
-                background="Background information about the issue.",
-                metadata={"created_by": "simulator", "created_at": "2023-10-01"}
+                problem_statement=config['issue']['problem_statement'],
+                background=config['issue']['background'],
+                metadata=config['issue']['metadata']
             )
             
             # Register the issue in TheBureau
@@ -237,8 +262,8 @@ def main():
         print(f"Simulation ID: {sim_id}")
         print(f"Agent Pool: {pool_size} agents")
         print(f"Scenarios Completed: {max_scenarios}")
-        print(f"Agents per Scenario: {args.num_agents}")
-        print(f"Seeds Used: Pool={args.pool_seed}, Run={args.run_seed}")
+        print(f"Agents per Scenario: {num_agents}")
+        print(f"Seeds Used: Pool={pool_seed}, Run={run_seed}")
         if round_durations:
             print(f"Total Runtime: {total_time:.3f}s")
             print(f"Performance: {min_duration:.3f}s / {avg_duration:.3f}s / {max_duration:.3f}s (min/avg/max)")
@@ -248,8 +273,8 @@ def main():
             logger.info(f"Simulation ID: {sim_id}")
             logger.info(f"Agent Pool: {pool_size} agents")
             logger.info(f"Scenarios Completed: {max_scenarios}")
-            logger.info(f"Agents per Scenario: {args.num_agents}")
-            logger.info(f"Seeds Used: Pool={args.pool_seed}, Run={args.run_seed}")
+            logger.info(f"Agents per Scenario: {num_agents}")
+            logger.info(f"Seeds Used: Pool={pool_seed}, Run={run_seed}")
             if round_durations:
                 logger.info(f"Total Runtime: {total_time:.3f}s")
                 logger.info(f"Performance: {min_duration:.3f}s / {avg_duration:.3f}s / {max_duration:.3f}s (min/avg/max)")

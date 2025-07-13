@@ -1,0 +1,48 @@
+# Round Table Consensus Simulation Configuration
+# Phase 1: Simulator constants only (no archetypes)
+
+# Simulation parameters
+simulation:
+  max_scenarios: 2
+  pool_seed: 1113
+  run_seed: 1719
+  num_agents: 5
+
+# Agent pool settings
+agent_pool:
+  size_multiplier: 10
+  min_size: 100
+  balance_range:
+    min: 0
+    max: 300
+
+# Trait mutation settings (from primer.py)
+traits:
+  mutation_rounds: 20
+  proposal_word_range:
+    min: 50
+    max: 80
+
+# Consensus settings
+consensus:
+  assignment_award: 100
+  max_feedback_per_agent: 3
+  feedback_stake: 5
+  proposal_self_stake: 50
+  revision_cycles:
+    min: 1
+    max: 3
+  staking_rounds:
+    min: 5
+    max: 7
+  conviction_params:
+    MaxMultiplier: 2.0
+    TargetFraction: 0.98
+
+# Issue generation
+issue:
+  problem_statement: "Sample problem statement for the issue."
+  background: "Background information about the issue."
+  metadata:
+    created_by: "simulator"
+    created_at: "2023-10-01"

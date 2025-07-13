@@ -9,7 +9,7 @@ class Primer:
     def __init__(self, global_config: GlobalConfig):
         self.gc = global_config
 
-    def generate_run_config(self, seed: int, num_agents: int) -> RunConfig:
+    def generate_run_config(self, seed: int, num_agents: int, trait_config: dict = None) -> RunConfig:
         """Generates a RunConfig based on the global configuration and given seed."""
         rng = random.Random(seed)  # Use isolated random instance
         
@@ -23,21 +23,22 @@ class Primer:
             # Use the archetype from agent metadata (set during pool creation)
             intended_archetype = agent.metadata.get("base_archetype")
             base_profile, archetype_name = generate_base_profile(seed + i, intended_archetype)
-            mutated_profile = mutate_profile(base_profile, seed=seed + SEED_OFFSET + i)
+            mutation_rounds = trait_config['mutation_rounds'] if trait_config else MUTATION_ROUNDS
+            mutated_profile = mutate_profile(base_profile, seed=seed + i, rounds=mutation_rounds)
 
             agent.metadata = agent.metadata or {}
             agent.metadata["protocol_profile"] = mutated_profile
             agent.metadata["archetype"] = archetype_name
             agent.metadata["profile_origin"] = {
                 "seed": seed + i,
-                "mutations": MUTATION_ROUNDS,
+                "mutations": mutation_rounds,
                 "base_archetype": archetype_name
             }
             
             logger.info(f"[TraitProfile] {aid} ({archetype_name}) → {mutated_profile}")
         
         initial_proposals = {
-            aid: self._generate_lorem_proposal(seed + i)
+            aid: self._generate_lorem_proposal(seed + i, trait_config)
             for i, aid in enumerate(agent_ids)
         }
         
@@ -49,14 +50,17 @@ class Primer:
             initial_proposals=initial_proposals
         )
 
-    def _generate_lorem_proposal(self, seed: int) -> str:
+    def _generate_lorem_proposal(self, seed: int, trait_config: dict = None) -> str:
         rng = random.Random(seed)  # Use isolated random instance
-        word_count = rng.randint(50, 80)  # Generate 50-80 words for bigger proposals
+        if trait_config and 'proposal_word_range' in trait_config:
+            word_range = trait_config['proposal_word_range']
+            word_count = rng.randint(word_range['min'], word_range['max'])
+        else:
+            word_count = rng.randint(50, 80)  # Default fallback
         return generate_lorem_content(rng, word_count)
 
-# Constants for configuration
+# Fallback constants (used when config not provided)
 MUTATION_ROUNDS = 20
-SEED_OFFSET = 1000
 
 # Define 10 personality archetypes with distinct trait patterns
 ARCHETYPES = {
