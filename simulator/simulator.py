@@ -97,17 +97,27 @@ def main():
 
         random.seed(pool_seed)
         # Ensure pool is 3-5x larger than num_agents for meaningful selection
-        min_pool_size = max(6, args.num_agents * 3)  # At least 3x factor, minimum 6
-        max_pool_size = max(min_pool_size, args.num_agents * 5)  # Up to 5x factor, ensure max >= min
-        pool_size = random.randint(min_pool_size, max_pool_size)
-        agents = {
-            f"Agent_{i}": AgentActor(
-                agent_id=f"Agent_{i}",
+        pool_size = max(100, args.num_agents * 10)  # 10x the required number or 100, whichever is greater
+        
+        # Import archetypes from primer
+        from primer import ARCHETYPES
+        archetype_names = list(ARCHETYPES.keys())
+        
+        agents = {}
+        for i in range(pool_size):
+            # Cycle through archetypes to ensure balanced distribution
+            archetype = archetype_names[i % len(archetype_names)]
+            archetype_index = (i // len(archetype_names)) + 1  # Count within each archetype
+            
+            agent_id = f"Agent_{archetype}_{archetype_index}"
+            agents[agent_id] = AgentActor(
+                agent_id=agent_id,
                 initial_balance=random.randint(0, 300),  # Random initial balance for variety
-                metadata={"proposal_submission_likelihood": random.randint(1,100)},  # Random likelihood for proposal submission
+                metadata={
+                    "base_archetype": archetype  # Store the intended archetype
+                },
                 seed=pool_seed + i  # Ensure unique seed for each agent
-            ) for i in range(pool_size)
-        }
+            )
         agent_pool = AgentPool(agents=agents)
         pool_factor = round(pool_size / args.num_agents, 1)
         logger.info(f"Generated agent pool with {pool_size} agents ({pool_factor}x factor for {args.num_agents} selected, seed: {pool_seed})")

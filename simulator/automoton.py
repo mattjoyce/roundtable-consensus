@@ -1,11 +1,25 @@
 from models import AgentActor, Action, ACTION_QUEUE, Proposal
 from loguru import logger
 import random
+import math
 
-def weighted_trait_decision(traits, weights, rng):
-    score = sum(traits[t] * weights[t] for t in weights)
+def linear(score: float) -> float:
+    return score          # 0–1 assumed
+
+def sigmoid(score: float, k: float = 5.0) -> float:
+    return 1 / (1 + math.exp(-k * (score - 0.5)))
+
+ACTIVATIONS = {
+    "linear": linear,
+    "sigmoid": sigmoid,
+}
+
+def weighted_trait_decision(traits, weights, rng, activation: str = "linear"):
+    raw_score = sum(traits[t] * weights[t] for t in weights)
+    activation_fn = ACTIVATIONS.get(activation, linear)
+    activated_score = activation_fn(raw_score)
     roll = rng.random()
-    return roll < score, score, roll
+    return roll < activated_score, activated_score, roll
 
 def handle_signal(agent: AgentActor, payload: dict):
     phase_type = payload.get("type")
@@ -37,19 +51,21 @@ def handle_propose(agent: AgentActor, payload: dict):
     initiative = profile.get("initiative", 0.5)
     compliance = profile.get("compliance", 0.9)
     risk = profile.get("risk_tolerance", 0.2)
+    persuasiveness = profile.get("persuasiveness", 0.5)
 
     decision_made = None
 
     if not has_acted:
-        # First time decision: Blend initiative + compliance  
+        # First time decision: Blend initiative + compliance + persuasiveness
         should_submit, score, roll = weighted_trait_decision(
-            traits={"initiative": initiative, "compliance": compliance},
-            weights={"initiative": 0.8, "compliance": 0.2},
-            rng=rng
+            traits={"initiative": initiative, "compliance": compliance, "persuasiveness": persuasiveness},
+            weights={"initiative": 0.6, "compliance": 0.2, "persuasiveness": 0.2},
+            rng=rng,
+            activation="sigmoid"  # More decisive for extreme trait combinations
         )
         
         logger.info(f"[DECISION] {agent.agent_id} first-time scored {score:.2f} vs roll {roll:.2f} "
-                   f"→ {'SUBMIT' if should_submit else 'CONSIDER'} | Weights: init=0.8, comp=0.2")
+                   f"→ {'SUBMIT' if should_submit else 'CONSIDER'} | Weights: init=0.6, comp=0.2, pers=0.2")
         
         if should_submit:
             decision_made = "submit"
@@ -64,19 +80,21 @@ def handle_propose(agent: AgentActor, payload: dict):
         
         memory["initial_decision"] = decision_made
     else:
-        # Retry decision: More compliance-driven with some initiative
+        # Retry decision: More compliance-driven with initiative and persuasiveness
         should_retry, score, roll = weighted_trait_decision(
-            traits={"compliance": compliance, "initiative": initiative},
-            weights={"compliance": 0.7, "initiative": 0.3},
-            rng=rng
+            traits={"compliance": compliance, "initiative": initiative, "persuasiveness": persuasiveness},
+            weights={"compliance": 0.5, "initiative": 0.3, "persuasiveness": 0.2},
+            rng=rng,
+            activation="linear"  # Keep linear for retry decisions
         )
         
         logger.info(f"[DECISION] {agent.agent_id} retry scored {score:.2f} vs roll {roll:.2f} "
-                   f"→ {'RETRY' if should_retry else 'HOLD'} | Weights: comp=0.7, init=0.3")
+                   f"→ {'RETRY' if should_retry else 'HOLD'} | Weights: comp=0.5, init=0.3, pers=0.2")
         
         if should_retry:
-            # Decide between submit vs signal
-            if rng.random() < 0.5:
+            # Decide between submit vs signal using persuasiveness
+            # High persuasiveness = more likely to submit rather than just signal
+            if rng.random() < (0.3 + persuasiveness * 0.4):  # 30-70% range based on persuasiveness
                 decision_made = "submit"
             else:
                 decision_made = "signal"
@@ -162,18 +180,25 @@ def handle_feedback(agent: AgentActor, payload: dict):
     sociability = profile.get("sociability", 0.5)
     initiative = profile.get("initiative", 0.5)
     compliance = profile.get("compliance", 0.9)
+    persuasiveness = profile.get("persuasiveness", 0.5)
     
     # Check if already at quota
     if feedback_given >= max_feedback:
         # Store in memory that agent has reached quota
         memory["quota_reached"] = True
         
-        # Use compliance trait to decide whether to respect quota
+        # Use compliance trait to decide whether to respect quota (heavily weighted toward compliance)
+        # Only very low compliance agents (~<0.1) should attempt quota violations
         should_respect_quota, compliance_score, compliance_roll = weighted_trait_decision(
             traits={"compliance": compliance},
             weights={"compliance": 1.0},
-            rng=rng
+            rng=rng,
+            activation="sigmoid"  # Strong compliance should be very decisive
         )
+        
+        # Additional check: make violations extremely rare (only when compliance < 0.15 AND random chance)
+        if not should_respect_quota and (compliance > 0.15 or rng.random() < 0.9):
+            should_respect_quota = True  # Force compliance for testing simulation
         
         if should_respect_quota:
             logger.info(f"[FEEDBACK] {agent.agent_id} already at quota ({feedback_given}/{max_feedback}) - respects limit (compliance {compliance_score:.2f} vs roll {compliance_roll:.2f})")
@@ -184,13 +209,14 @@ def handle_feedback(agent: AgentActor, payload: dict):
     
     # Decide if agent will provide feedback this round
     should_give_feedback, score, roll = weighted_trait_decision(
-        traits={"sociability": sociability, "initiative": initiative, "compliance": compliance},
-        weights={"sociability": 0.5, "initiative": 0.3, "compliance": 0.2},
-        rng=rng
+        traits={"sociability": sociability, "initiative": initiative, "compliance": compliance, "persuasiveness": persuasiveness},
+        weights={"sociability": 0.4, "initiative": 0.25, "compliance": 0.2, "persuasiveness": 0.15},
+        rng=rng,
+        activation="linear"  # Keep linear for general participation decisions
     )
     
     if not should_give_feedback:
-        logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO FEEDBACK | Weights: soc=0.5, init=0.3, comp=0.2")
+        logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO FEEDBACK | Weights: soc=0.4, init=0.25, comp=0.2, pers=0.15")
         return {"ack": True}
     
     # Calculate how many feedbacks to give this round
@@ -202,10 +228,11 @@ def handle_feedback(agent: AgentActor, payload: dict):
         num_feedbacks = 1
         logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → OVER-QUOTA ATTEMPT (will be rejected)")
     else:
-        # Scale with sociability or use random within bounds
-        scaled = int(round(max_this_round * sociability))
+        # Scale with sociability and persuasiveness - more persuasive agents give more feedback
+        social_factor = (sociability * 0.7 + persuasiveness * 0.3)  # Blend social engagement with persuasive drive
+        scaled = int(round(max_this_round * social_factor))
         num_feedbacks = max(1, min(scaled, max_this_round))
-        logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → PROVIDING {num_feedbacks} FEEDBACK(S)")
+        logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → PROVIDING {num_feedbacks} FEEDBACK(S) (social_factor={social_factor:.2f})")
 
     # Sample target proposal IDs (fake for now - excluding own)
     possible_targets = [f"PAgent_{i}" for i in range(10) if f"Agent_{i}" != own_id]
@@ -218,7 +245,7 @@ def handle_feedback(agent: AgentActor, payload: dict):
             agent_id=own_id,
             payload={
                 "target_proposal_id": pid,
-                "comment": f"Agent {own_id} thinks {pid} lacks clarity.",
+                "comment": f"Agent {own_id} thinks {pid} {'needs improvement' if persuasiveness > 0.6 else 'lacks clarity'}.",
                 "tick": tick,
                 "issue_id": issue_id
             }
@@ -253,15 +280,17 @@ def handle_revise(agent: AgentActor, payload: dict):
     compliance = profile.get("compliance", 0.9)
     consistency = profile.get("consistency", 0.5)
     risk_tolerance = profile.get("risk_tolerance", 0.2)
+    persuasiveness = profile.get("persuasiveness", 0.5)
     
     # Check if agent has feedback on their proposal
     if not feedback_received:
         # For testing: Make agents more likely to revise even without feedback
         # Use a combination of traits to decide whether to make a "preemptive" revision
         should_revise_anyway, score, roll = weighted_trait_decision(
-            traits={"adaptability": adaptability, "initiative": profile.get("initiative", 0.5)},
-            weights={"adaptability": 0.7, "initiative": 0.3},
-            rng=rng
+            traits={"adaptability": adaptability, "initiative": profile.get("initiative", 0.5), "persuasiveness": persuasiveness},
+            weights={"adaptability": 0.6, "initiative": 0.25, "persuasiveness": 0.15},
+            rng=rng,
+            activation="linear"  # Preemptive revisions should be gradual decisions
         )
         
         if should_revise_anyway:
@@ -314,11 +343,12 @@ def handle_revise(agent: AgentActor, payload: dict):
             logger.info(f"[REVISE] {agent.agent_id} no feedback received, making preemptive revision (Δ={delta:.2f}) | adaptability={adaptability:.2f}, score={score:.2f} vs roll={roll:.2f} [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
             return {"ack": True}
         
-        # Fall back to compliance-based ready signal
+        # Fall back to participation-based ready signal (not about rule compliance)
         should_signal, score2, roll2 = weighted_trait_decision(
-            traits={"compliance": compliance},
-            weights={"compliance": 1.0},
-            rng=rng
+            traits={"compliance": compliance, "initiative": profile.get("initiative", 0.5), "sociability": profile.get("sociability", 0.5)},
+            weights={"compliance": 0.5, "initiative": 0.3, "sociability": 0.2},  # Compliance = process participation, not rule-following
+            rng=rng,
+            activation="linear"  # Participation decisions should be gradual
         )
         
         if should_signal:
@@ -327,9 +357,9 @@ def handle_revise(agent: AgentActor, payload: dict):
                 agent_id=agent.agent_id,
                 payload={"issue_id": issue_id}
             ))
-            logger.info(f"[REVISE] {agent.agent_id} no feedback received, signaling ready (compliance {score2:.2f} vs roll {roll2:.2f})")
+            logger.info(f"[REVISE] {agent.agent_id} no feedback received, signaling ready (participation {score2:.2f} vs roll {roll2:.2f}) | Weights: comp=0.5, init=0.3, soc=0.2")
         else:
-            logger.info(f"[REVISE] {agent.agent_id} no feedback received, waiting (compliance {score2:.2f} vs roll {roll2:.2f})")
+            logger.info(f"[REVISE] {agent.agent_id} no feedback received, waiting (participation {score2:.2f} vs roll {roll2:.2f}) | Weights: comp=0.5, init=0.3, soc=0.2")
         
         return {"ack": True}
     
@@ -337,9 +367,10 @@ def handle_revise(agent: AgentActor, payload: dict):
     if has_revised:
         # Already revised once this phase, use consistency trait to avoid over-revising
         should_revise_again, score, roll = weighted_trait_decision(
-            traits={"consistency": 1 - consistency, "adaptability": adaptability},  # Lower consistency = more likely to revise again
-            weights={"consistency": 0.7, "adaptability": 0.3},
-            rng=rng
+            traits={"consistency": 1 - consistency, "adaptability": adaptability, "persuasiveness": persuasiveness},  # Lower consistency = more likely to revise again
+            weights={"consistency": 0.6, "adaptability": 0.25, "persuasiveness": 0.15},
+            rng=rng,
+            activation="linear"  # Multi-revision decisions should be gradual
         )
         
         if not should_revise_again:
@@ -356,14 +387,17 @@ def handle_revise(agent: AgentActor, payload: dict):
         traits={
             "adaptability": adaptability,
             "self_interest": self_interest,
-            "risk_tolerance": risk_tolerance
+            "risk_tolerance": risk_tolerance,
+            "persuasiveness": persuasiveness
         },
         weights={
-            "adaptability": 0.5,      # Main driver for accepting feedback
-            "self_interest": 0.3,     # Self-interest may resist change
-            "risk_tolerance": 0.2     # Willingness to take revision risk
+            "adaptability": 0.4,      # Main driver for accepting feedback
+            "self_interest": 0.25,    # Self-interest may resist change
+            "risk_tolerance": 0.2,    # Willingness to take revision risk
+            "persuasiveness": 0.15    # Persuasive agents want to improve their position
         },
-        rng=rng
+        rng=rng,
+        activation="sigmoid"  # Feedback response should be decisive
     )
     
     if not should_revise:
@@ -372,7 +406,7 @@ def handle_revise(agent: AgentActor, payload: dict):
             agent_id=agent.agent_id,
             payload={"issue_id": issue_id}
         ))
-        logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO REVISION | Weights: adapt=0.5, self=0.3, risk=0.2")
+        logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO REVISION | Weights: adapt=0.4, self=0.25, risk=0.2, pers=0.15")
         return {"ack": True}
     
     # Decide revision size (delta) based on adaptability and risk tolerance
@@ -398,7 +432,8 @@ def handle_revise(agent: AgentActor, payload: dict):
     thoroughness = profile.get("compliance", 0.5) + profile.get("consistency", 0.5)  # More methodical agents
     verbosity = profile.get("sociability", 0.5)  # More social agents tend to be verbose
     adaptability_boost = profile.get("adaptability", 0.5) * 0.5  # Adaptable agents may write more when responding to feedback
-    trait_factor = (thoroughness + verbosity + adaptability_boost) / 3.5  # Combine traits, normalize
+    persuasive_boost = persuasiveness * 0.3  # Persuasive agents write more to convince
+    trait_factor = (thoroughness + verbosity + adaptability_boost + persuasive_boost) / 3.8  # Combine traits, normalize
     
     # Feedback revisions tend to be more substantial (30-90 words)
     min_words = 30
@@ -425,7 +460,7 @@ def handle_revise(agent: AgentActor, payload: dict):
     memory["has_revised"] = True
     memory["revision_delta"] = delta
     
-    logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → REVISING (Δ={delta:.2f}) | Weights: adapt=0.5, self=0.3, risk=0.2 [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
+    logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → REVISING (Δ={delta:.2f}) | Weights: adapt=0.4, self=0.25, risk=0.2, pers=0.15 [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
     
     return {"ack": True}
 
@@ -453,6 +488,7 @@ def handle_stake(agent: AgentActor, payload: dict):
     initiative = profile.get("initiative", 0.5)
     consistency = profile.get("consistency", 0.5)
     adaptability = profile.get("adaptability", 0.5)
+    persuasiveness = profile.get("persuasiveness", 0.5)
     
     # Get current balance from memory or assume it's tracked elsewhere
     # For now, we'll use a simple heuristic based on traits
@@ -471,7 +507,8 @@ def handle_stake(agent: AgentActor, payload: dict):
             "self_interest": 0.2, 
             "compliance": 0.1
         },
-        rng=rng
+        rng=rng,
+        activation="sigmoid"  # High-stakes financial decision needs clear commitment
     )
     
     if not should_stake:
@@ -492,32 +529,38 @@ def handle_stake(agent: AgentActor, payload: dict):
         traits={
             "self_interest": self_interest,       # Higher = own proposal
             "consistency": consistency,           # Higher = stick with own
-            "risk_tolerance": risk_tolerance      # Higher = confident in own
+            "risk_tolerance": risk_tolerance,     # Higher = confident in own
+            "persuasiveness": persuasiveness      # Higher = believe in own proposal's merit
         },
         weights={
-            "self_interest": 0.5, 
-            "consistency": 0.3, 
-            "risk_tolerance": 0.2
+            "self_interest": 0.4, 
+            "consistency": 0.25, 
+            "risk_tolerance": 0.2,
+            "persuasiveness": 0.15
         },
-        rng=rng
+        rng=rng,
+        activation="sigmoid"  # Strong conviction should be decisive
     )
     
     if stake_on_own:
         target_proposal_id = own_proposal_id
         proposal_choice_reason = "own_proposal"
-        logger.info(f"[STAKE] {agent.agent_id} proposal choice: own ({score:.2f} vs {roll:.2f}) | Weights: self=0.5, cons=0.3, risk=0.2")
+        logger.info(f"[STAKE] {agent.agent_id} proposal choice: own ({score:.2f} vs {roll:.2f}) | Weights: self=0.4, cons=0.25, risk=0.2, pers=0.15")
     else:
         # Check: stake on others' proposals?
         stake_on_others, score2, roll2 = weighted_trait_decision(
             traits={
                 "sociability": sociability,          # Higher = support community
-                "adaptability": adaptability         # Higher = hedge bets
+                "adaptability": adaptability,        # Higher = hedge bets
+                "persuasiveness": persuasiveness     # Higher = recognize good proposals
             },
             weights={
-                "sociability": 0.6, 
-                "adaptability": 0.4
+                "sociability": 0.5, 
+                "adaptability": 0.3,
+                "persuasiveness": 0.2
             },
-            rng=rng
+            rng=rng,
+            activation="linear"  # Community support should be gradual
         )
         
         if stake_on_others:
@@ -525,7 +568,7 @@ def handle_stake(agent: AgentActor, payload: dict):
             possible_proposals = [f"PAgent_{i}" for i in range(10) if f"Agent_{i}" != agent.agent_id]
             target_proposal_id = rng.choice(possible_proposals) if possible_proposals else own_proposal_id
             proposal_choice_reason = "sampled_other"
-            logger.info(f"[STAKE] {agent.agent_id} proposal choice: others ({score2:.2f} vs {roll2:.2f}) | Weights: soc=0.6, adapt=0.4")
+            logger.info(f"[STAKE] {agent.agent_id} proposal choice: others ({score2:.2f} vs {roll2:.2f}) | Weights: soc=0.5, adapt=0.3, pers=0.2")
         else:
             # Default to own if both fail
             target_proposal_id = own_proposal_id
@@ -536,8 +579,11 @@ def handle_stake(agent: AgentActor, payload: dict):
     # Simulate current balance (in real implementation, would get from credit manager)
     estimated_balance = 100 - (round_number * 10)  # Simple balance estimation
     
-    # Direct trait-driven stake percentage (up to 80% of balance)
-    stake_percentage = risk_tolerance * 0.8
+    # Direct trait-driven stake percentage influenced by persuasiveness and risk tolerance
+    # Persuasive agents stake more when they believe in their choice
+    base_percentage = risk_tolerance * 0.6
+    persuasive_boost = persuasiveness * 0.3  # Up to 30% additional stake for highly persuasive agents
+    stake_percentage = min(0.8, base_percentage + persuasive_boost)  # Cap at 80%
     stake_amount = max(1, int(estimated_balance * stake_percentage))
     
     # Submit stake action
