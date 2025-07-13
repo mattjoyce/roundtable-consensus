@@ -1,4 +1,6 @@
 from loguru import logger
+from collections import defaultdict
+import math
 
 
 class CreditManager:
@@ -7,6 +9,10 @@ class CreditManager:
         self.balances = dict(initial_balances)  # Make a copy
         self.events = []  # Burn / Transfer / Rejection logs
         self.proposal_stakes = {}  # proposal_id -> staked amount
+        
+        # Conviction tracking structures
+        self.conviction_ledger = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> accumulated stake
+        self.conviction_rounds = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> consecutive rounds
         
         # Log credit manager initialization
         logger.bind(event_dict={
@@ -133,6 +139,98 @@ class CreditManager:
             }).info(f"Transferred stake of {amount} CP from {old_proposal_id} to {new_proposal_id}")
             return True
         return False
+
+    def calculate_conviction_multiplier(self, agent_id: str, proposal_id: str, conviction_params: dict) -> float:
+        """Calculate conviction multiplier based on consecutive rounds and conviction parameters."""
+        consecutive_rounds = self.conviction_rounds[agent_id][proposal_id]
+        
+        # Support both exponential and linear conviction calculation modes
+        if "MaxMultiplier" in conviction_params and "TargetFraction" in conviction_params:
+            # Exponential formula: EffectiveWeight = stake_amount × (1 + (MaxMultiplier - 1) × (1 - exp(-k × r)))
+            max_multiplier = conviction_params["MaxMultiplier"]
+            target_fraction = conviction_params.get("TargetFraction", 0.98)
+            target_rounds = conviction_params.get("TargetRounds", 5)
+            
+            if consecutive_rounds == 0:
+                return 1.0
+                
+            # Calculate k = -ln(1 - T) / R
+            k = -math.log(1 - target_fraction) / target_rounds
+            
+            # Calculate multiplier: 1 + (MaxMultiplier - 1) × (1 - exp(-k × r))
+            multiplier = 1 + (max_multiplier - 1) * (1 - math.exp(-k * consecutive_rounds))
+            
+        else:
+            # Linear fallback: base + growth * prior_rounds
+            base = conviction_params.get("base", 1.0)
+            growth = conviction_params.get("growth", 0.2)
+            multiplier = base + growth * consecutive_rounds
+            
+        return round(multiplier, 3)
+    
+    def get_agent_conviction_on_proposal(self, agent_id: str, proposal_id: str) -> int:
+        """Get the accumulated conviction stake for an agent on a specific proposal."""
+        return self.conviction_ledger[agent_id][proposal_id]
+    
+    def get_agent_current_proposal(self, agent_id: str) -> str:
+        """Get the proposal the agent is currently supporting (if any)."""
+        for proposal_id in self.conviction_ledger[agent_id]:
+            if self.conviction_rounds[agent_id][proposal_id] > 0:
+                return proposal_id
+        return None
+    
+    def update_conviction(self, agent_id: str, proposal_id: str, stake_amount: int, 
+                         conviction_params: dict, tick: int, issue_id: str) -> dict:
+        """Update conviction tracking and return conviction details."""
+        # Check if agent is switching from another proposal
+        current_proposal = self.get_agent_current_proposal(agent_id)
+        is_switching = current_proposal is not None and current_proposal != proposal_id
+        
+        if is_switching:
+            # Reset conviction on previous proposal
+            self.conviction_rounds[agent_id][current_proposal] = 0
+            logger.bind(event_dict={
+                "event_type": "conviction_switched",
+                "agent_id": agent_id,
+                "from_proposal_id": current_proposal,
+                "to_proposal_id": proposal_id,
+                "stake_amount": stake_amount,
+                "tick": tick,
+                "issue_id": issue_id
+            }).info(f"Agent {agent_id} switched conviction from {current_proposal} to {proposal_id}")
+        
+        # Update conviction tracking
+        self.conviction_ledger[agent_id][proposal_id] += stake_amount
+        self.conviction_rounds[agent_id][proposal_id] += 1
+        
+        # Calculate conviction multiplier
+        multiplier = self.calculate_conviction_multiplier(agent_id, proposal_id, conviction_params)
+        effective_weight = round(stake_amount * multiplier, 2)
+        total_conviction = self.conviction_ledger[agent_id][proposal_id]
+        consecutive_rounds = self.conviction_rounds[agent_id][proposal_id]
+        
+        # Log conviction update event
+        logger.bind(event_dict={
+            "event_type": "conviction_updated",
+            "agent_id": agent_id,
+            "proposal_id": proposal_id,
+            "raw_stake": stake_amount,
+            "multiplier": multiplier,
+            "effective_weight": effective_weight,
+            "total_conviction": total_conviction,
+            "consecutive_rounds": consecutive_rounds,
+            "tick": tick,
+            "issue_id": issue_id
+        }).info(f"Conviction updated: {agent_id} → {proposal_id}: {stake_amount}CP × {multiplier} = {effective_weight} effective weight")
+        
+        return {
+            "raw_stake": stake_amount,
+            "multiplier": multiplier,
+            "effective_weight": effective_weight,
+            "total_conviction": total_conviction,
+            "consecutive_rounds": consecutive_rounds,
+            "switched_from": current_proposal if is_switching else None
+        }
 
     #return events as a reported dict
     def get_reported_events(self) -> list:

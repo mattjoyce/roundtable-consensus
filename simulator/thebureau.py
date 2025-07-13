@@ -219,10 +219,6 @@ class TheBureau:
             "issue_id": issue_id,
             "tick": tick
         }).info(f"Proposal accepted from {agent_id}: {proposal.proposal_id} for issue {issue_id} at tick {tick}")
-        logger.bind(event_dict={
-            "event_type": "agent_ready",
-            "agent_id": agent_id
-        }).debug(f"Agent {agent_id} marked as Ready")
 
     def create_no_action_proposal(self, tick: int, agent_id: str, issue_id: str) -> Proposal:
         proposal = Proposal(
@@ -470,7 +466,7 @@ class TheBureau:
         }).info(f"Revision accepted from {agent_id}: {proposal_id} → {new_proposal_id} (Δ={delta}, cost={cost}CP)")
     
     def receive_stake(self, agent_id: str, payload: dict):
-        """Process a stake action from an agent - deduct CP and record stake."""
+        """Process a stake action from an agent - deduct CP and record stake with conviction tracking."""
         proposal_id = payload.get("proposal_id")
         stake_amount = payload.get("stake_amount")
         round_number = payload.get("round_number", 1)
@@ -533,7 +529,22 @@ class TheBureau:
         )
         
         if deduct_success:
-            # Emit stake_recorded event
+            # Get conviction parameters from current consensus
+            conviction_params = {}
+            if self.current_consensus:
+                conviction_params = self.current_consensus.gc.conviction_params
+            
+            # Update conviction tracking and get conviction details
+            conviction_details = self.creditmgr.update_conviction(
+                agent_id=agent_id,
+                proposal_id=proposal_id,
+                stake_amount=stake_amount,
+                conviction_params=conviction_params,
+                tick=tick,
+                issue_id=issue_id
+            )
+            
+            # Emit comprehensive stake_recorded event with conviction details
             logger.bind(event_dict={
                 "event_type": "stake_recorded",
                 "agent_id": agent_id,
@@ -541,11 +552,14 @@ class TheBureau:
                 "stake_amount": stake_amount,
                 "round_number": round_number,
                 "choice_reason": choice_reason,
+                "conviction_multiplier": conviction_details["multiplier"],
+                "effective_weight": conviction_details["effective_weight"],
+                "total_conviction": conviction_details["total_conviction"],
+                "consecutive_rounds": conviction_details["consecutive_rounds"],
+                "switched_from": conviction_details["switched_from"],
                 "tick": tick,
                 "issue_id": issue_id
-            }).info(f"Stake recorded: {agent_id} staked {stake_amount} CP on {proposal_id} (Round {round_number}, {choice_reason})")
-            
-            # Add credit burn event was already handled by attempt_deduct
+            }).info(f"Stake recorded: {agent_id} staked {stake_amount} CP on {proposal_id} (Round {round_number}, {choice_reason}) - Effective weight: {conviction_details['effective_weight']} (×{conviction_details['multiplier']})")
             
         else:
             # Emit insufficient_credit event (already handled by attempt_deduct)

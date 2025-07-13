@@ -127,14 +127,18 @@ class StakePhase(Phase):
         
         issue_id = state.get("issue_id")
         tick = state.get("tick")
+        creditmgr = state.get("creditmgr")
         
         for agent in agents:
+            # Include current balance in the signal
+            current_balance = creditmgr.get_balance(agent.agent_id) if creditmgr else 0
             agent.on_signal({
                 "type": "Stake",
                 "round_number": self.round_number,
                 "conviction_params": self.conviction_params,
                 "tick": tick,
-                "issue_id": issue_id
+                "issue_id": issue_id,
+                "current_balance": current_balance
             })
         
         return state

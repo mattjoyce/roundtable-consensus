@@ -543,16 +543,19 @@ def handle_stake(agent: AgentActor, payload: dict):
             proposal_choice_reason = "default_own"
             logger.info(f"[STAKE] {agent.agent_id} proposal choice: default to own (others failed: {score2:.2f} vs {roll2:.2f})")
     
-    # Decision 3: Calculate stake amount (direct trait calculation)
-    # Simulate current balance (in real implementation, would get from credit manager)
-    estimated_balance = 100 - (round_number * 10)  # Simple balance estimation
+    # Decision 3: Calculate stake amount (trait-based with balance knowledge)
+    current_balance = payload.get("current_balance", 0)
     
-    # Direct trait-driven stake percentage influenced by persuasiveness and risk tolerance
-    # Persuasive agents stake more when they believe in their choice
+    # Pure trait-driven stake percentage
     base_percentage = risk_tolerance * 0.6
     persuasive_boost = persuasiveness * 0.3  # Up to 30% additional stake for highly persuasive agents
     stake_percentage = min(0.8, base_percentage + persuasive_boost)  # Cap at 80%
-    stake_amount = max(1, int(estimated_balance * stake_percentage))
+    
+    # Apply trait-driven percentage to actual balance
+    stake_amount = max(1, int(current_balance * stake_percentage))
+    
+    # Only constraint: don't stake more than available balance
+    stake_amount = min(stake_amount, current_balance)
     
     # Submit stake action
     ACTION_QUEUE.submit(Action(
@@ -576,6 +579,6 @@ def handle_stake(agent: AgentActor, payload: dict):
     memory[f"round_{round_number}_amount"] = stake_amount
     memory[f"round_{round_number}_target"] = target_proposal_id
     
-    logger.info(f"[STAKE] {agent.agent_id} → STAKING {stake_amount} CP | Round {round_number} | Target: {target_proposal_id} ({proposal_choice_reason}) | Stake %: {stake_percentage:.2f}")
+    logger.info(f"[STAKE] {agent.agent_id} → STAKING {stake_amount} CP | Round {round_number} | Balance: {current_balance} CP | Target: {target_proposal_id} ({proposal_choice_reason}) | Stake %: {stake_percentage:.2f}")
     
     return {"ack": True}

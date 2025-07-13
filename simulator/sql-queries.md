@@ -233,3 +233,201 @@ WHERE event_type = 'insufficient_credit';
 ```
 
 This should show equal counts for stake events and credit burns, proving the staking mechanism is working correctly.
+
+## Conviction-Based Staking Analysis (STAKE-3)
+
+### Conviction Growth and Multipliers
+
+```sql
+-- All conviction updates with multiplier progression
+SELECT 
+    agent_id,
+    SUBSTR(message, INSTR(message, '→') + 2, INSTR(message, ':') - INSTR(message, '→') - 2) as proposal_id,
+    CAST(SUBSTR(message, INSTR(message, ': ') + 2, INSTR(message, 'CP ×') - INSTR(message, ': ') - 2) AS INTEGER) as raw_stake,
+    CAST(SUBSTR(message, INSTR(message, '× ') + 2, INSTR(message, ' =') - INSTR(message, '× ') - 2) AS REAL) as multiplier,
+    CAST(SUBSTR(message, INSTR(message, '= ') + 2, INSTR(message, ' effective') - INSTR(message, '= ') - 2) AS REAL) as effective_weight,
+    tick
+FROM events 
+WHERE event_type = 'conviction_updated'
+ORDER BY agent_id, tick;
+
+-- Average conviction multipliers by round
+SELECT 
+    phase,
+    AVG(CAST(SUBSTR(message, INSTR(message, '× ') + 2, INSTR(message, ' =') - INSTR(message, '× ') - 2) AS REAL)) as avg_multiplier,
+    COUNT(*) as conviction_count
+FROM events 
+WHERE event_type = 'conviction_updated'
+GROUP BY phase
+ORDER BY phase;
+
+-- Top conviction builders (highest multipliers achieved)
+SELECT 
+    agent_id,
+    MAX(CAST(SUBSTR(message, INSTR(message, '× ') + 2, INSTR(message, ' =') - INSTR(message, '× ') - 2) AS REAL)) as max_multiplier,
+    COUNT(*) as conviction_updates
+FROM events 
+WHERE event_type = 'conviction_updated'
+GROUP BY agent_id
+ORDER BY max_multiplier DESC;
+```
+
+### Conviction Switching Analysis
+
+```sql
+-- All conviction switches between proposals
+SELECT agent_id, message, tick
+FROM events 
+WHERE event_type = 'conviction_switched'
+ORDER BY agent_id, tick;
+
+-- Agents who switched conviction support
+SELECT 
+    agent_id,
+    COUNT(*) as switches,
+    GROUP_CONCAT(DISTINCT SUBSTR(message, INSTR(message, 'from ') + 5, INSTR(message, ' to ') - INSTR(message, 'from ') - 5)) as from_proposals,
+    GROUP_CONCAT(DISTINCT SUBSTR(message, INSTR(message, ' to ') + 4, INSTR(message, ' (Agent') - INSTR(message, ' to ') - 4)) as to_proposals
+FROM events 
+WHERE event_type = 'conviction_switched'
+GROUP BY agent_id
+ORDER BY switches DESC;
+
+-- Conviction loyalty analysis (agents who never switched)
+SELECT 
+    agent_id,
+    COUNT(DISTINCT SUBSTR(message, INSTR(message, '→') + 2, INSTR(message, ':') - INSTR(message, '→') - 2)) as proposal_count,
+    COUNT(*) as total_convictions
+FROM events 
+WHERE event_type = 'conviction_updated'
+AND agent_id NOT IN (SELECT agent_id FROM events WHERE event_type = 'conviction_switched')
+GROUP BY agent_id
+HAVING proposal_count = 1  -- Only supported one proposal
+ORDER BY total_convictions DESC;
+```
+
+### Staking Behavior Analysis
+
+```sql
+-- Balance-aware staking patterns
+SELECT 
+    agent_id,
+    CAST(SUBSTR(message, INSTR(message, ': ') + 2, INSTR(message, ' CP →') - INSTR(message, ': ') - 2) AS INTEGER) as stake_amount,
+    SUBSTR(message, INSTR(message, '(Round ') + 7, 1) as round_number,
+    tick
+FROM events 
+WHERE event_type = 'stake_received'
+ORDER BY agent_id, round_number;
+
+-- Staking progression by rounds
+SELECT 
+    SUBSTR(message, INSTR(message, '(Round ') + 7, 1) as round_number,
+    AVG(CAST(SUBSTR(message, INSTR(message, ': ') + 2, INSTR(message, ' CP →') - INSTR(message, ': ') - 2) AS INTEGER)) as avg_stake,
+    MIN(CAST(SUBSTR(message, INSTR(message, ': ') + 2, INSTR(message, ' CP →') - INSTR(message, ': ') - 2) AS INTEGER)) as min_stake,
+    MAX(CAST(SUBSTR(message, INSTR(message, ': ') + 2, INSTR(message, ' CP →') - INSTR(message, ': ') - 2) AS INTEGER)) as max_stake,
+    COUNT(*) as stake_count
+FROM events 
+WHERE event_type = 'stake_received'
+GROUP BY round_number
+ORDER BY CAST(round_number AS INTEGER);
+
+-- Effective weight vs raw stake comparison
+SELECT 
+    cu.agent_id,
+    cu.proposal_id,
+    cu.raw_stake,
+    cu.effective_weight,
+    cu.multiplier,
+    ROUND((cu.effective_weight - cu.raw_stake) / cu.raw_stake * 100, 2) as conviction_bonus_pct
+FROM (
+    SELECT 
+        agent_id,
+        SUBSTR(message, INSTR(message, '→') + 2, INSTR(message, ':') - INSTR(message, '→') - 2) as proposal_id,
+        CAST(SUBSTR(message, INSTR(message, ': ') + 2, INSTR(message, 'CP ×') - INSTR(message, ': ') - 2) AS INTEGER) as raw_stake,
+        CAST(SUBSTR(message, INSTR(message, '× ') + 2, INSTR(message, ' =') - INSTR(message, '× ') - 2) AS REAL) as multiplier,
+        CAST(SUBSTR(message, INSTR(message, '= ') + 2, INSTR(message, ' effective') - INSTR(message, '= ') - 2) AS REAL) as effective_weight
+    FROM events 
+    WHERE event_type = 'conviction_updated'
+) cu
+ORDER BY conviction_bonus_pct DESC;
+```
+
+### Stake Rejection Analysis
+
+```sql
+-- Insufficient balance attempts (outlier behavior)
+SELECT 
+    agent_id,
+    COUNT(*) as rejection_count,
+    GROUP_CONCAT(DISTINCT SUBSTR(message, 1, 50)) as rejection_reasons
+FROM events 
+WHERE event_type = 'stake_rejected' AND message LIKE '%insufficient%'
+GROUP BY agent_id
+ORDER BY rejection_count DESC;
+
+-- Rejection rate by agent (compliance analysis)
+SELECT 
+    sr.agent_id,
+    sr.attempts,
+    COALESCE(rej.rejections, 0) as rejections,
+    ROUND(CAST(COALESCE(rej.rejections, 0) AS REAL) / sr.attempts * 100, 2) as rejection_rate_pct
+FROM (
+    SELECT agent_id, COUNT(*) as attempts
+    FROM events 
+    WHERE event_type = 'stake_received'
+    GROUP BY agent_id
+) sr
+LEFT JOIN (
+    SELECT agent_id, COUNT(*) as rejections
+    FROM events 
+    WHERE event_type = 'stake_rejected'
+    GROUP BY agent_id
+) rej ON sr.agent_id = rej.agent_id
+ORDER BY rejection_rate_pct DESC;
+```
+
+### STAKE-3 Validation Queries
+
+```sql
+-- Verify conviction system is working
+SELECT 
+    'Conviction Updates' as metric,
+    COUNT(*) as count
+FROM events 
+WHERE event_type = 'conviction_updated'
+UNION ALL
+SELECT 
+    'Conviction Switches' as metric,
+    COUNT(*) as count
+FROM events 
+WHERE event_type = 'conviction_switched'
+UNION ALL
+SELECT 
+    'Unique Conviction Multipliers' as metric,
+    COUNT(DISTINCT CAST(SUBSTR(message, INSTR(message, '× ') + 2, INSTR(message, ' =') - INSTR(message, '× ') - 2) AS REAL)) as count
+FROM events 
+WHERE event_type = 'conviction_updated'
+UNION ALL
+SELECT 
+    'Balance-Aware Stakes' as metric,
+    COUNT(*) as count
+FROM events 
+WHERE event_type = 'stake_received';
+
+-- Conviction multiplier distribution
+SELECT 
+    CASE 
+        WHEN multiplier >= 2.0 THEN '2.0+ (max conviction)'
+        WHEN multiplier >= 1.5 THEN '1.5-1.99 (high conviction)'
+        WHEN multiplier >= 1.2 THEN '1.2-1.49 (medium conviction)'
+        ELSE '1.0-1.19 (low conviction)'
+    END as conviction_tier,
+    COUNT(*) as count,
+    ROUND(AVG(multiplier), 3) as avg_multiplier
+FROM (
+    SELECT CAST(SUBSTR(message, INSTR(message, '× ') + 2, INSTR(message, ' =') - INSTR(message, '× ') - 2) AS REAL) as multiplier
+    FROM events 
+    WHERE event_type = 'conviction_updated'
+) 
+GROUP BY conviction_tier
+ORDER BY avg_multiplier DESC;
+```
