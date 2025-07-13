@@ -431,3 +431,82 @@ FROM (
 GROUP BY conviction_tier
 ORDER BY avg_multiplier DESC;
 ```
+
+### Enhanced Payload-Based Analysis
+
+```sql
+-- Conviction data using structured JSON payloads (when available)
+SELECT 
+    agent_id,
+    JSON_EXTRACT(payload, '$.raw') as raw_stake,
+    JSON_EXTRACT(payload, '$.multiplier') as multiplier,
+    JSON_EXTRACT(payload, '$.weight') as effective_weight,
+    JSON_EXTRACT(payload, '$.rounds_supported') as consecutive_rounds,
+    JSON_EXTRACT(payload, '$.rounds_held') as total_rounds_held,
+    JSON_EXTRACT(payload, '$.total_conviction') as total_conviction,
+    tick
+FROM events 
+WHERE event_type = 'conviction_updated' 
+AND payload IS NOT NULL
+ORDER BY agent_id, tick;
+
+-- Rounds held vs consecutive rounds analysis
+SELECT 
+    agent_id,
+    AVG(CAST(JSON_EXTRACT(payload, '$.rounds_supported') AS REAL)) as avg_consecutive_rounds,
+    AVG(CAST(JSON_EXTRACT(payload, '$.rounds_held') AS REAL)) as avg_total_rounds_held,
+    COUNT(*) as conviction_updates
+FROM events 
+WHERE event_type = 'conviction_updated' 
+AND payload IS NOT NULL
+GROUP BY agent_id
+ORDER BY avg_total_rounds_held DESC;
+
+-- Conviction switching impact analysis (with payload data)
+SELECT 
+    cs.agent_id,
+    cs.from_proposal,
+    cs.to_proposal,
+    JSON_EXTRACT(cs.payload, '$.previous_rounds_held') as lost_rounds,
+    cu.new_consecutive_rounds,
+    cu.new_multiplier
+FROM (
+    SELECT 
+        agent_id,
+        JSON_EXTRACT(payload, '$.from_proposal') as from_proposal,
+        JSON_EXTRACT(payload, '$.to_proposal') as to_proposal,
+        payload,
+        tick
+    FROM events 
+    WHERE event_type = 'conviction_switched' 
+    AND payload IS NOT NULL
+) cs
+LEFT JOIN (
+    SELECT 
+        agent_id,
+        JSON_EXTRACT(payload, '$.rounds_supported') as new_consecutive_rounds,
+        JSON_EXTRACT(payload, '$.multiplier') as new_multiplier,
+        tick
+    FROM events 
+    WHERE event_type = 'conviction_updated' 
+    AND payload IS NOT NULL
+) cu ON cs.agent_id = cu.agent_id AND cu.tick > cs.tick
+ORDER BY lost_rounds DESC;
+
+-- Conviction efficiency: weight gained per CP invested
+SELECT 
+    agent_id,
+    SUM(CAST(JSON_EXTRACT(payload, '$.raw') AS INTEGER)) as total_cp_invested,
+    SUM(CAST(JSON_EXTRACT(payload, '$.weight') AS REAL)) as total_effective_weight,
+    ROUND(
+        SUM(CAST(JSON_EXTRACT(payload, '$.weight') AS REAL)) / 
+        SUM(CAST(JSON_EXTRACT(payload, '$.raw') AS INTEGER)), 
+        3
+    ) as efficiency_ratio
+FROM events 
+WHERE event_type = 'conviction_updated' 
+AND payload IS NOT NULL
+GROUP BY agent_id
+HAVING total_cp_invested > 0
+ORDER BY efficiency_ratio DESC;
+```

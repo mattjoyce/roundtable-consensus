@@ -1,0 +1,555 @@
+[07/14/25 07:31:55] INFO     07:31:55 | INFO     | 💬 Simulation logging initialized: 25071407-10                                                 simlog.py:112
+                    INFO     07:31:55 | INFO     | 💬 Database: /Users/mattjoyce/Projects/roundtable-consensus/simulator/db/25071407-10.sqlite3   simlog.py:113
+                    INFO     07:31:55 | INFO     | 💬 Console verbosity: TRACE                                                                    simlog.py:114
+                    INFO     07:31:55 | INFO     | 💬 Starting Round Table Consensus Simulation                                                 simulator.py:99
+                    INFO     07:31:55 | INFO     | 🔬 Simulation parameters configured                                                         simulator.py:109
+                    INFO     07:31:55 | INFO     | 💬 Using pool seed: 1113, run seed: 1719                                                    simulator.py:112
+                    INFO     07:31:55 | INFO     | 💬 Generated agent pool with 100 agents (20.0x factor for 5 selected, seed: 1113)           simulator.py:142
+                    DEBUG    07:31:55 | DEBUG    | 🔬 CreditManager initialized with 0 agents and 0 total credits                           creditmanager.py:23
+                    DEBUG    07:31:55 | DEBUG    | 🔬 CreditManager initialized with 100 agents and 13560 total credits                     creditmanager.py:23
+                    INFO     07:31:55 | INFO     | 💬 Running simulation 1 of 1 with seed 1719                                                 simulator.py:159
+                    INFO     07:31:55 | INFO     | 🔬 Starting scenario 1                                                                      simulator.py:169
+                    INFO     07:31:55 | INFO     | 💬 [TraitProfile] Agent_Diplomat_7 (Diplomat) → {'compliance': 0.5, 'initiative': 0.62,         primer.py:38
+                             'adaptability': 0.83, 'sociability': 0.75, 'self_interest': 0.5, 'risk_tolerance': 0.26, 'consistency': 0.5,                      
+                             'persuasiveness': 0.89}                                                                                                           
+                    INFO     07:31:55 | INFO     | 💬 [TraitProfile] Agent_Leader_6 (Leader) → {'compliance': 0.21, 'initiative': 0.87,            primer.py:38
+                             'adaptability': 0.87, 'sociability': 0.96, 'self_interest': 0.66, 'risk_tolerance': 0.63, 'consistency': 0.82,                    
+                             'persuasiveness': 0.93}                                                                                                           
+                    INFO     07:31:55 | INFO     | 💬 [TraitProfile] Agent_Maverick_1 (Maverick) → {'compliance': 0.11, 'initiative': 0.78,        primer.py:38
+                             'adaptability': 0.93, 'sociability': 0.54, 'self_interest': 0.81, 'risk_tolerance': 0.79, 'consistency': 0.5,                     
+                             'persuasiveness': 0.72}                                                                                                           
+                    INFO     07:31:55 | INFO     | 💬 [TraitProfile] Agent_Opportunist_7 (Opportunist) → {'compliance': 0.52, 'initiative': 0.53,  primer.py:38
+                             'adaptability': 0.71, 'sociability': 0.75, 'self_interest': 0.93, 'risk_tolerance': 0.76, 'consistency': 0.45,                    
+                             'persuasiveness': 0.84}                                                                                                           
+                    INFO     07:31:55 | INFO     | 💬 [TraitProfile] Agent_Opportunist_5 (Opportunist) → {'compliance': 0.36, 'initiative': 0.59,  primer.py:38
+                             'adaptability': 0.67, 'sociability': 0.61, 'self_interest': 0.78, 'risk_tolerance': 0.84, 'consistency': 0.45,                    
+                             'persuasiveness': 0.67}                                                                                                           
+                    INFO     07:31:55 | INFO     | 💬 Registered issue: Issue_1719                                                             simulator.py:205
+                    INFO     07:31:55 | INFO     | 🔬 Credit awarded: Agent_Opportunist_7 +100 CP (Initial credit for consensus run)       creditmanager.py:101
+                    INFO     07:31:55 | INFO     | 🔬 Credit awarded: Agent_Diplomat_7 +100 CP (Initial credit for consensus run)          creditmanager.py:101
+                    INFO     07:31:55 | INFO     | 🔬 Credit awarded: Agent_Leader_6 +100 CP (Initial credit for consensus run)            creditmanager.py:101
+                    INFO     07:31:55 | INFO     | 🔬 Credit awarded: Agent_Opportunist_5 +100 CP (Initial credit for consensus run)       creditmanager.py:101
+                    INFO     07:31:55 | INFO     | 🔬 Credit awarded: Agent_Maverick_1 +100 CP (Initial credit for consensus run)          creditmanager.py:101
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 1 — Phase PROPOSE (Phase Tick 1)                                                   roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Propose Phase [0] with max think ticks 3                                       roundtable.py:28
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Diplomat_7 first-time scored 0.68 vs roll 0.39 → SUBMIT | Weights:       automoton.py:92
+                             init=0.6, comp=0.2, pers=0.2                                                                                                      
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: submit_proposal by Agent_Diplomat_7                                        models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Diplomat_7 submitted proposal. (tick 0) [Content: 53 words, 357 chars]             automoton.py:157
+                             (trait_factor=0.59)                                                                                                               
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Leader_6 first-time scored 0.78 vs roll 0.06 → SUBMIT | Weights:         automoton.py:92
+                             init=0.6, comp=0.2, pers=0.2                                                                                                      
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: submit_proposal by Agent_Leader_6                                          models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Leader_6 submitted proposal. (tick 0) [Content: 57 words, 393 chars]               automoton.py:157
+                             (trait_factor=0.68)                                                                                                               
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Maverick_1 first-time scored 0.66 vs roll 0.81 → CONSIDER | Weights:     automoton.py:92
+                             init=0.6, comp=0.2, pers=0.2                                                                                                      
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Maverick_1 compliance check → WAIT                                      automoton.py:104
+                    INFO     07:31:55 | INFO     | 💬 Agent_Maverick_1 is waiting (passive no-action). (tick 0)                                automoton.py:165
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Opportunist_7 first-time scored 0.61 vs roll 0.59 → SUBMIT | Weights:    automoton.py:92
+                             init=0.6, comp=0.2, pers=0.2                                                                                                      
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: submit_proposal by Agent_Opportunist_7                                     models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Opportunist_7 submitted proposal. (tick 0) [Content: 52 words, 346 chars]          automoton.py:157
+                             (trait_factor=0.57)                                                                                                               
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Opportunist_5 first-time scored 0.57 vs roll 0.76 → CONSIDER | Weights:  automoton.py:92
+                             init=0.6, comp=0.2, pers=0.2                                                                                                      
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Opportunist_5 compliance check → SIGNAL                                 automoton.py:101
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Opportunist_5                                        models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Opportunist_5 signaled ready. (tick 0)                                             automoton.py:162
+                    INFO     07:31:55 | INFO     | 🔬 Received proposal from Agent_Diplomat_7: PAgent_Diplomat_7 for issue Issue_1719          thebureau.py:144
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Diplomat_7 -50 CP (Proposal Self Stake)                          creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Staked 50 CP from Agent_Diplomat_7 to proposal PAgent_Diplomat_7                     creditmanager.py:119
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Proposal accepted from Agent_Diplomat_7: PAgent_Diplomat_7 for issue Issue_1719 at tick  thebureau.py:221
+                             1                                                                                                                                 
+                    INFO     07:31:55 | INFO     | 🔬 Received proposal from Agent_Leader_6: PAgent_Leader_6 for issue Issue_1719              thebureau.py:144
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Leader_6 -50 CP (Proposal Self Stake)                            creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Staked 50 CP from Agent_Leader_6 to proposal PAgent_Leader_6                         creditmanager.py:119
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Proposal accepted from Agent_Leader_6: PAgent_Leader_6 for issue Issue_1719 at tick 1    thebureau.py:221
+                    INFO     07:31:55 | INFO     | 🔬 Received proposal from Agent_Opportunist_7: PAgent_Opportunist_7 for issue Issue_1719    thebureau.py:144
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_7 -50 CP (Proposal Self Stake)                       creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Staked 50 CP from Agent_Opportunist_7 to proposal PAgent_Opportunist_7               creditmanager.py:119
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Proposal accepted from Agent_Opportunist_7: PAgent_Opportunist_7 for issue Issue_1719 at thebureau.py:221
+                             tick 1                                                                                                                            
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Transitioned to new phase: 0                                                             thebureau.py:112
+                    DEBUG    07:31:55 | DEBUG    | 💬 Phase Tick: 1                                                                            thebureau.py:113
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 2 — Phase PROPOSE (Phase Tick 2)                                                   roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Propose Phase [0] with max think ticks 3                                       roundtable.py:28
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Diplomat_7 retry scored 0.61 vs roll 0.27 → RETRY | Weights: comp=0.5,  automoton.py:116
+                             init=0.3, pers=0.2                                                                                                                
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: submit_proposal by Agent_Diplomat_7                                        models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Diplomat_7 submitted proposal. (tick 0) [Content: 53 words, 393 chars]             automoton.py:157
+                             (trait_factor=0.59)                                                                                                               
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Leader_6 retry scored 0.55 vs roll 0.49 → RETRY | Weights: comp=0.5,    automoton.py:116
+                             init=0.3, pers=0.2                                                                                                                
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Leader_6                                             models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Leader_6 signaled ready. (tick 0)                                                  automoton.py:162
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Maverick_1 first-time scored 0.66 vs roll 0.72 → CONSIDER | Weights:     automoton.py:92
+                             init=0.6, comp=0.2, pers=0.2                                                                                                      
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Maverick_1 compliance check → SIGNAL                                    automoton.py:101
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Maverick_1                                           models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Maverick_1 signaled ready. (tick 0)                                                automoton.py:162
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Opportunist_7 retry scored 0.59 vs roll 0.28 → RETRY | Weights:         automoton.py:116
+                             comp=0.5, init=0.3, pers=0.2                                                                                                      
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Opportunist_7                                        models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Opportunist_7 signaled ready. (tick 0)                                             automoton.py:162
+                    INFO     07:31:55 | INFO     | 💬 [DECISION] Agent_Opportunist_5 retry scored 0.49 vs roll 0.41 → RETRY | Weights:         automoton.py:116
+                             comp=0.5, init=0.3, pers=0.2                                                                                                      
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: submit_proposal by Agent_Opportunist_5                                     models.py:76
+                    INFO     07:31:55 | INFO     | 💬 Agent_Opportunist_5 submitted proposal. (tick 0) [Content: 49 words, 351 chars]          automoton.py:157
+                             (trait_factor=0.48)                                                                                                               
+                    INFO     07:31:55 | INFO     | 🔬 Received proposal from Agent_Diplomat_7: PAgent_Diplomat_7 for issue Issue_1719          thebureau.py:144
+                    WARNING  07:31:55 | WARNING  | 🔬 Rejected proposal from Agent_Diplomat_7: Already submitted in current PROPOSE phase      thebureau.py:171
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Maverick_1 marked as Ready                                                   thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Received proposal from Agent_Opportunist_5: PAgent_Opportunist_5 for issue Issue_1719    thebureau.py:144
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_5 -50 CP (Proposal Self Stake)                       creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Staked 50 CP from Agent_Opportunist_5 to proposal PAgent_Opportunist_5               creditmanager.py:119
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Proposal accepted from Agent_Opportunist_5: PAgent_Opportunist_5 for issue Issue_1719 at thebureau.py:221
+                             tick 2                                                                                                                            
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 3 — Phase PROPOSE (Phase Tick 3)                                                   roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 4 — Phase FEEDBACK (Phase Tick 1)                                                  roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Feedback Phase [1] for cycle 1 with max feedback per agent 3                   roundtable.py:56
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Diplomat_7 scored 0.69 vs roll 0.03 → PROVIDING 2 FEEDBACK(S)           automoton.py:243
+                             (social_factor=0.79)                                                                                                              
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Diplomat_7                                               models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Diplomat_7                                               models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Diplomat_7 submitted 2 feedbacks | Total: 2/3                           automoton.py:265
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Leader_6 scored 0.78 vs roll 1.00 → NO FEEDBACK | Weights: soc=0.4,     automoton.py:227
+                             init=0.25, comp=0.2, pers=0.15                                                                                                    
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Maverick_1 scored 0.54 vs roll 0.14 → PROVIDING 2 FEEDBACK(S)           automoton.py:243
+                             (social_factor=0.59)                                                                                                              
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Maverick_1                                               models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Maverick_1                                               models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Maverick_1 submitted 2 feedbacks | Total: 2/3                           automoton.py:265
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Opportunist_7 scored 0.66 vs roll 0.31 → PROVIDING 2 FEEDBACK(S)        automoton.py:243
+                             (social_factor=0.78)                                                                                                              
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Opportunist_7                                            models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Opportunist_7                                            models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Opportunist_7 submitted 2 feedbacks | Total: 2/3                        automoton.py:265
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Opportunist_5 scored 0.56 vs roll 0.09 → PROVIDING 2 FEEDBACK(S)        automoton.py:243
+                             (social_factor=0.63)                                                                                                              
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Opportunist_5                                            models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Opportunist_5                                            models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Opportunist_5 submitted 2 feedbacks | Total: 2/3                        automoton.py:265
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Diplomat_7 -5 CP (Feedback Stake)                                creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Diplomat_7 → PAgent_2: Agent Agent_Diplomat_7 thinks PAgent_2 n...   thebureau.py:277
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Diplomat_7 -5 CP (Feedback Stake)                                creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Diplomat_7 → PAgent_3: Agent Agent_Diplomat_7 thinks PAgent_3 n...   thebureau.py:277
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Maverick_1 -5 CP (Feedback Stake)                                creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Maverick_1 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Maverick_1 → PAgent_2: Agent Agent_Maverick_1 thinks PAgent_2 n...   thebureau.py:277
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Maverick_1 -5 CP (Feedback Stake)                                creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Maverick_1 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Maverick_1 → PAgent_9: Agent Agent_Maverick_1 thinks PAgent_9 n...   thebureau.py:277
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_7 -5 CP (Feedback Stake)                             creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Opportunist_7 → PAgent_6: Agent Agent_Opportunist_7 thinks           thebureau.py:277
+                             PAgent_...                                                                                                                        
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_7 -5 CP (Feedback Stake)                             creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Opportunist_7 → PAgent_7: Agent Agent_Opportunist_7 thinks           thebureau.py:277
+                             PAgent_...                                                                                                                        
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_5 -5 CP (Feedback Stake)                             creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Opportunist_5 → PAgent_9: Agent Agent_Opportunist_5 thinks           thebureau.py:277
+                             PAgent_...                                                                                                                        
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_5 -5 CP (Feedback Stake)                             creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Opportunist_5 → PAgent_2: Agent Agent_Opportunist_5 thinks           thebureau.py:277
+                             PAgent_...                                                                                                                        
+                    INFO     07:31:55 | INFO     | 🔬 Transitioned to new phase: 1                                                             thebureau.py:112
+                    DEBUG    07:31:55 | DEBUG    | 💬 Phase Tick: 1                                                                            thebureau.py:113
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 5 — Phase FEEDBACK (Phase Tick 2)                                                  roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Feedback Phase [1] for cycle 1 with max feedback per agent 3                   roundtable.py:56
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Diplomat_7 scored 0.69 vs roll 0.21 → PROVIDING 1 FEEDBACK(S)           automoton.py:243
+                             (social_factor=0.79)                                                                                                              
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Diplomat_7                                               models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Diplomat_7 submitted 1 feedbacks | Total: 3/3                           automoton.py:265
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Leader_6 scored 0.78 vs roll 0.09 → PROVIDING 3 FEEDBACK(S)             automoton.py:243
+                             (social_factor=0.95)                                                                                                              
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Leader_6                                                 models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Leader_6                                                 models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Leader_6                                                 models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Leader_6 submitted 3 feedbacks | Total: 3/3                             automoton.py:265
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Maverick_1 scored 0.54 vs roll 0.82 → NO FEEDBACK | Weights: soc=0.4,   automoton.py:227
+                             init=0.25, comp=0.2, pers=0.15                                                                                                    
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Opportunist_7 scored 0.66 vs roll 0.06 → PROVIDING 1 FEEDBACK(S)        automoton.py:243
+                             (social_factor=0.78)                                                                                                              
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: feedback by Agent_Opportunist_7                                            models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Opportunist_7 submitted 1 feedbacks | Total: 3/3                        automoton.py:265
+                    INFO     07:31:55 | INFO     | 💬 [FEEDBACK] Agent_Opportunist_5 scored 0.56 vs roll 0.94 → NO FEEDBACK | Weights:         automoton.py:227
+                             soc=0.4, init=0.25, comp=0.2, pers=0.15                                                                                           
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Diplomat_7 -5 CP (Feedback Stake)                                creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Diplomat_7 → PAgent_7: Agent Agent_Diplomat_7 thinks PAgent_7 n...   thebureau.py:277
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Leader_6 -5 CP (Feedback Stake)                                  creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Leader_6 → PAgent_9: Agent Agent_Leader_6 thinks PAgent_9 nee...     thebureau.py:277
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Leader_6 -5 CP (Feedback Stake)                                  creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Leader_6 → PAgent_2: Agent Agent_Leader_6 thinks PAgent_2 nee...     thebureau.py:277
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Leader_6 -5 CP (Feedback Stake)                                  creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Leader_6 → PAgent_3: Agent Agent_Leader_6 thinks PAgent_3 nee...     thebureau.py:277
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_7 -5 CP (Feedback Stake)                             creditmanager.py:50
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 💬 Feedback from Agent_Opportunist_7 → PAgent_9: Agent Agent_Opportunist_7 thinks           thebureau.py:277
+                             PAgent_...                                                                                                                        
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 6 — Phase FEEDBACK (Phase Tick 3)                                                  roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 7 — Phase REVISE (Phase Tick 1)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Revise Phase [2] for cycle 1 with proposal self-stake 50                       roundtable.py:89
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Diplomat_7                                                 models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Diplomat_7 no feedback received, making preemptive revision (Δ=0.46) |    automoton.py:339
+                             adaptability=0.83, score=0.79 vs roll=0.35 [Content: 55 words, 404 chars] (trait_factor=0.58)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Leader_6                                                   models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Leader_6 no feedback received, making preemptive revision (Δ=0.56) |      automoton.py:339
+                             adaptability=0.87, score=0.88 vs roll=0.10 [Content: 59 words, 395 chars] (trait_factor=0.66)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Maverick_1                                                 models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Maverick_1 no feedback received, making preemptive revision (Δ=0.62) |    automoton.py:339
+                             adaptability=0.93, score=0.86 vs roll=0.61 [Content: 43 words, 320 chars] (trait_factor=0.38)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Opportunist_7                                              models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Opportunist_7 no feedback received, making preemptive revision (Δ=0.54) | automoton.py:339
+                             adaptability=0.71, score=0.68 vs roll=0.60 [Content: 54 words, 375 chars] (trait_factor=0.57)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Opportunist_5                                              models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Opportunist_5 no feedback received, making preemptive revision (Δ=0.54) | automoton.py:339
+                             adaptability=0.67, score=0.65 vs roll=0.48 [Content: 48 words, 341 chars] (trait_factor=0.47)                                     
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Diplomat_7: PAgent_Diplomat_7 (Δ=0.46119999999999994)       thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Diplomat_7 -23 CP (Revision cost (Δ=0.46119999999999994))        creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Diplomat_7 to PAgent_Diplomat_7@v2            creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Diplomat_7: PAgent_Diplomat_7 → PAgent_Diplomat_7@v2        thebureau.py:466
+                             (Δ=0.46119999999999994, cost=23CP)                                                                                                
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Leader_6: PAgent_Leader_6 (Δ=0.5644)                        thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Leader_6 -28 CP (Revision cost (Δ=0.5644))                       creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Leader_6 to PAgent_Leader_6@v2                creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Leader_6: PAgent_Leader_6 → PAgent_Leader_6@v2 (Δ=0.5644,   thebureau.py:466
+                             cost=28CP)                                                                                                                        
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Maverick_1: PAgent_Maverick_1 (Δ=0.6244000000000001)        thebureau.py:293
+                    WARNING  07:31:55 | WARNING  | 🔬 Rejected revision from Agent_Maverick_1: Not owner of proposal PAgent_Maverick_1         thebureau.py:336
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Opportunist_7: PAgent_Opportunist_7 (Δ=0.538)               thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_7 -26 CP (Revision cost (Δ=0.538))                   creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Opportunist_7 to PAgent_Opportunist_7@v2      creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Opportunist_7: PAgent_Opportunist_7 →                       thebureau.py:466
+                             PAgent_Opportunist_7@v2 (Δ=0.538, cost=26CP)                                                                                      
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Opportunist_5: PAgent_Opportunist_5 (Δ=0.5428)              thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_5 -27 CP (Revision cost (Δ=0.5428))                  creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Opportunist_5 to PAgent_Opportunist_5@v2      creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Opportunist_5: PAgent_Opportunist_5 →                       thebureau.py:466
+                             PAgent_Opportunist_5@v2 (Δ=0.5428, cost=27CP)                                                                                     
+                    INFO     07:31:55 | INFO     | 🔬 Transitioned to new phase: 2                                                             thebureau.py:112
+                    DEBUG    07:31:55 | DEBUG    | 💬 Phase Tick: 1                                                                            thebureau.py:113
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 8 — Phase REVISE (Phase Tick 2)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Revise Phase [2] for cycle 1 with proposal self-stake 50                       roundtable.py:89
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Diplomat_7                                           models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Diplomat_7 no feedback received, signaling ready (participation 0.59 vs   automoton.py:352
+                             roll 0.23) | Weights: comp=0.5, init=0.3, soc=0.2                                                                                 
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Leader_6                                                   models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Leader_6 no feedback received, making preemptive revision (Δ=0.56) |      automoton.py:339
+                             adaptability=0.87, score=0.88 vs roll=0.01 [Content: 59 words, 433 chars] (trait_factor=0.66)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Maverick_1                                                 models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Maverick_1 no feedback received, making preemptive revision (Δ=0.62) |    automoton.py:339
+                             adaptability=0.93, score=0.86 vs roll=0.31 [Content: 43 words, 318 chars] (trait_factor=0.38)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Opportunist_7                                              models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Opportunist_7 no feedback received, making preemptive revision (Δ=0.54) | automoton.py:339
+                             adaptability=0.71, score=0.68 vs roll=0.20 [Content: 54 words, 391 chars] (trait_factor=0.57)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Opportunist_5                                              models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Opportunist_5 no feedback received, making preemptive revision (Δ=0.54) | automoton.py:339
+                             adaptability=0.67, score=0.65 vs roll=0.21 [Content: 48 words, 343 chars] (trait_factor=0.47)                                     
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Leader_6: PAgent_Leader_6 (Δ=0.5644)                        thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Leader_6: PAgent_Leader_6 → PAgent_Leader_6@v2           thebureau.py:328
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Leader_6 -28 CP (Revision cost (Δ=0.5644))                       creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Leader_6@v2 to PAgent_Leader_6@v3             creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Leader_6: PAgent_Leader_6@v2 → PAgent_Leader_6@v3           thebureau.py:466
+                             (Δ=0.5644, cost=28CP)                                                                                                             
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Maverick_1: PAgent_Maverick_1 (Δ=0.6244000000000001)        thebureau.py:293
+                    WARNING  07:31:55 | WARNING  | 🔬 Rejected revision from Agent_Maverick_1: Not owner of proposal PAgent_Maverick_1         thebureau.py:336
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Opportunist_7: PAgent_Opportunist_7 (Δ=0.538)               thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Opportunist_7: PAgent_Opportunist_7 →                    thebureau.py:328
+                             PAgent_Opportunist_7@v2                                                                                                           
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_7 -26 CP (Revision cost (Δ=0.538))                   creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Opportunist_7@v2 to PAgent_Opportunist_7@v3   creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Opportunist_7: PAgent_Opportunist_7@v2 →                    thebureau.py:466
+                             PAgent_Opportunist_7@v3 (Δ=0.538, cost=26CP)                                                                                      
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Opportunist_5: PAgent_Opportunist_5 (Δ=0.5428)              thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Opportunist_5: PAgent_Opportunist_5 →                    thebureau.py:328
+                             PAgent_Opportunist_5@v2                                                                                                           
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_5 -27 CP (Revision cost (Δ=0.5428))                  creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Opportunist_5@v2 to PAgent_Opportunist_5@v3   creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Opportunist_5: PAgent_Opportunist_5@v2 →                    thebureau.py:466
+                             PAgent_Opportunist_5@v3 (Δ=0.5428, cost=27CP)                                                                                     
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 9 — Phase REVISE (Phase Tick 3)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Revise Phase [2] for cycle 1 with proposal self-stake 50                       roundtable.py:89
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Diplomat_7 no feedback received, waiting (participation 0.59 vs roll      automoton.py:354
+                             0.66) | Weights: comp=0.5, init=0.3, soc=0.2                                                                                      
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Leader_6                                                   models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Leader_6 no feedback received, making preemptive revision (Δ=0.56) |      automoton.py:339
+                             adaptability=0.87, score=0.88 vs roll=0.51 [Content: 59 words, 414 chars] (trait_factor=0.66)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Maverick_1                                                 models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Maverick_1 no feedback received, making preemptive revision (Δ=0.62) |    automoton.py:339
+                             adaptability=0.93, score=0.86 vs roll=0.36 [Content: 43 words, 324 chars] (trait_factor=0.38)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Opportunist_7                                              models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Opportunist_7 no feedback received, making preemptive revision (Δ=0.54) | automoton.py:339
+                             adaptability=0.71, score=0.68 vs roll=0.35 [Content: 54 words, 404 chars] (trait_factor=0.57)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Opportunist_5                                              models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Opportunist_5 no feedback received, making preemptive revision (Δ=0.54) | automoton.py:339
+                             adaptability=0.67, score=0.65 vs roll=0.61 [Content: 48 words, 312 chars] (trait_factor=0.47)                                     
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Leader_6: PAgent_Leader_6 (Δ=0.5644)                        thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Leader_6: PAgent_Leader_6 → PAgent_Leader_6@v3           thebureau.py:328
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Leader_6 -28 CP (Revision cost (Δ=0.5644))                       creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Leader_6@v3 to PAgent_Leader_6@v4             creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Leader_6: PAgent_Leader_6@v3 → PAgent_Leader_6@v4           thebureau.py:466
+                             (Δ=0.5644, cost=28CP)                                                                                                             
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Maverick_1: PAgent_Maverick_1 (Δ=0.6244000000000001)        thebureau.py:293
+                    WARNING  07:31:55 | WARNING  | 🔬 Rejected revision from Agent_Maverick_1: Not owner of proposal PAgent_Maverick_1         thebureau.py:336
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Opportunist_7: PAgent_Opportunist_7 (Δ=0.538)               thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Opportunist_7: PAgent_Opportunist_7 →                    thebureau.py:328
+                             PAgent_Opportunist_7@v3                                                                                                           
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_7 -26 CP (Revision cost (Δ=0.538))                   creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Opportunist_7@v3 to PAgent_Opportunist_7@v4   creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Opportunist_7: PAgent_Opportunist_7@v3 →                    thebureau.py:466
+                             PAgent_Opportunist_7@v4 (Δ=0.538, cost=26CP)                                                                                      
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Opportunist_5: PAgent_Opportunist_5 (Δ=0.5428)              thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Opportunist_5: PAgent_Opportunist_5 →                    thebureau.py:328
+                             PAgent_Opportunist_5@v3                                                                                                           
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_5 -27 CP (Revision cost (Δ=0.5428))                  creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Opportunist_5@v3 to PAgent_Opportunist_5@v4   creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Opportunist_5: PAgent_Opportunist_5@v3 →                    thebureau.py:466
+                             PAgent_Opportunist_5@v4 (Δ=0.5428, cost=27CP)                                                                                     
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 10 — Phase REVISE (Phase Tick 4)                                                   roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Revise Phase [2] for cycle 1 with proposal self-stake 50                       roundtable.py:89
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Diplomat_7                                                 models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Diplomat_7 no feedback received, making preemptive revision (Δ=0.46) |    automoton.py:339
+                             adaptability=0.83, score=0.79 vs roll=0.40 [Content: 55 words, 401 chars] (trait_factor=0.58)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Leader_6                                                   models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Leader_6 no feedback received, making preemptive revision (Δ=0.56) |      automoton.py:339
+                             adaptability=0.87, score=0.88 vs roll=0.03 [Content: 59 words, 392 chars] (trait_factor=0.66)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Maverick_1                                                 models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Maverick_1 no feedback received, making preemptive revision (Δ=0.62) |    automoton.py:339
+                             adaptability=0.93, score=0.86 vs roll=0.81 [Content: 43 words, 304 chars] (trait_factor=0.38)                                     
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Opportunist_7                                        models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Opportunist_7 no feedback received, signaling ready (participation 0.57   automoton.py:352
+                             vs roll 0.07) | Weights: comp=0.5, init=0.3, soc=0.2                                                                              
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: revise by Agent_Opportunist_5                                              models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [REVISE] Agent_Opportunist_5 no feedback received, making preemptive revision (Δ=0.54) | automoton.py:339
+                             adaptability=0.67, score=0.65 vs roll=0.43 [Content: 48 words, 324 chars] (trait_factor=0.47)                                     
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Diplomat_7: PAgent_Diplomat_7 (Δ=0.46119999999999994)       thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Diplomat_7: PAgent_Diplomat_7 → PAgent_Diplomat_7@v2     thebureau.py:328
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Diplomat_7 -23 CP (Revision cost (Δ=0.46119999999999994))        creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Diplomat_7@v2 to PAgent_Diplomat_7@v3         creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Diplomat_7: PAgent_Diplomat_7@v2 → PAgent_Diplomat_7@v3     thebureau.py:466
+                             (Δ=0.46119999999999994, cost=23CP)                                                                                                
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Leader_6: PAgent_Leader_6 (Δ=0.5644)                        thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Leader_6: PAgent_Leader_6 → PAgent_Leader_6@v4           thebureau.py:328
+                    WARNING  07:31:55 | WARNING  | 🔬 Insufficient credit: Agent_Leader_6 attempted 28 CP but has 12 CP                     creditmanager.py:73
+                    WARNING  07:31:55 | WARNING  | 🔬 Rejected revision from Agent_Leader_6: Insufficient CP for cost 28                       thebureau.py:366
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Maverick_1: PAgent_Maverick_1 (Δ=0.6244000000000001)        thebureau.py:293
+                    WARNING  07:31:55 | WARNING  | 🔬 Rejected revision from Agent_Maverick_1: Not owner of proposal PAgent_Maverick_1         thebureau.py:336
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Received revision from Agent_Opportunist_5: PAgent_Opportunist_5 (Δ=0.5428)              thebureau.py:293
+                    INFO     07:31:55 | INFO     | 🔬 Corrected proposal ID for Agent_Opportunist_5: PAgent_Opportunist_5 →                    thebureau.py:328
+                             PAgent_Opportunist_5@v4                                                                                                           
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_5 -27 CP (Revision cost (Δ=0.5428))                  creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Transferred stake of 50 CP from PAgent_Opportunist_5@v4 to PAgent_Opportunist_5@v5   creditmanager.py:139
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Revision accepted from Agent_Opportunist_5: PAgent_Opportunist_5@v4 →                    thebureau.py:466
+                             PAgent_Opportunist_5@v5 (Δ=0.5428, cost=27CP)                                                                                     
+                    WARNING  07:31:55 | WARNING  | 🔬 Timeout REVISE Phase [2] at tick 10                                                       thebureau.py:77
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Maverick_1 marked as Ready                                                   thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 11 — Phase REVISE (Phase Tick 5)                                                   roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 12 — Phase STAKE (Phase Tick 1)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Stake Phase [3] for round 1 with conviction params {'MaxMultiplier': 2.0,     roundtable.py:126
+                             'TargetFraction': 0.98}                                                                                                           
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Diplomat_7 proposal choice: others (0.80 vs 0.69) | Weights: soc=0.5,      automoton.py:539
+                             adapt=0.3, pers=0.2                                                                                                               
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: stake by Agent_Diplomat_7                                                  models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Diplomat_7                                           models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Diplomat_7 → STAKING 70 CP | Round 1 | Balance: 167 CP | Target: PAgent_6  automoton.py:582
+                             (sampled_other) | Stake %: 0.42                                                                                                   
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Leader_6 proposal choice: own (0.76 vs 0.05) | Weights: self=0.4,          automoton.py:516
+                             cons=0.25, risk=0.2, pers=0.15                                                                                                    
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: stake by Agent_Leader_6                                                    models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Leader_6                                             models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Leader_6 → STAKING 7 CP | Round 1 | Balance: 12 CP | Target:               automoton.py:582
+                             PAgent_Leader_6 (own_proposal) | Stake %: 0.66                                                                                    
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Maverick_1 proposal choice: own (0.75 vs 0.32) | Weights: self=0.4,        automoton.py:516
+                             cons=0.25, risk=0.2, pers=0.15                                                                                                    
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: stake by Agent_Maverick_1                                                  models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Maverick_1                                           models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Maverick_1 → STAKING 86 CP | Round 1 | Balance: 125 CP | Target:           automoton.py:582
+                             PAgent_Maverick_1 (own_proposal) | Stake %: 0.69                                                                                  
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Opportunist_7 proposal choice: own (0.79 vs 0.18) | Weights: self=0.4,     automoton.py:516
+                             cons=0.25, risk=0.2, pers=0.15                                                                                                    
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: stake by Agent_Opportunist_7                                               models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Opportunist_7                                        models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Opportunist_7 → STAKING 117 CP | Round 1 | Balance: 166 CP | Target:       automoton.py:582
+                             PAgent_Opportunist_7 (own_proposal) | Stake %: 0.71                                                                               
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Opportunist_5 proposal choice: own (0.72 vs 0.23) | Weights: self=0.4,     automoton.py:516
+                             cons=0.25, risk=0.2, pers=0.15                                                                                                    
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: stake by Agent_Opportunist_5                                               models.py:76
+                    DEBUG    07:31:55 | DEBUG    | 💬 Action submitted: signal_ready by Agent_Opportunist_5                                        models.py:76
+                    INFO     07:31:55 | INFO     | 💬 [STAKE] Agent_Opportunist_5 → STAKING 34 CP | Round 1 | Balance: 49 CP | Target:         automoton.py:582
+                             PAgent_Opportunist_5 (own_proposal) | Stake %: 0.71                                                                               
+                    INFO     07:31:55 | INFO     | 🔬 Received stake from Agent_Diplomat_7: 70 CP → PAgent_6 (Round 1)                         thebureau.py:484
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Diplomat_7 -70 CP (Conviction stake (Round 1))                   creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Conviction updated: Agent_Diplomat_7 → PAgent_6: 70CP × 1.543 = 108.01 effective     creditmanager.py:224
+                             weight                                                                                                                            
+                    INFO     07:31:55 | INFO     | 🔬 Stake recorded: Agent_Diplomat_7 staked 70 CP on PAgent_6 (Round 1, sampled_other) -     thebureau.py:562
+                             Effective weight: 108.01 (×1.543)                                                                                                 
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Received stake from Agent_Leader_6: 7 CP → PAgent_Leader_6 (Round 1)                     thebureau.py:484
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Leader_6 -7 CP (Conviction stake (Round 1))                      creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Conviction updated: Agent_Leader_6 → PAgent_Leader_6: 7CP × 1.543 = 10.8 effective   creditmanager.py:224
+                             weight                                                                                                                            
+                    INFO     07:31:55 | INFO     | 🔬 Stake recorded: Agent_Leader_6 staked 7 CP on PAgent_Leader_6 (Round 1, own_proposal) -  thebureau.py:562
+                             Effective weight: 10.8 (×1.543)                                                                                                   
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Received stake from Agent_Maverick_1: 86 CP → PAgent_Maverick_1 (Round 1)                thebureau.py:484
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Maverick_1 -86 CP (Conviction stake (Round 1))                   creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Conviction updated: Agent_Maverick_1 → PAgent_Maverick_1: 86CP × 1.543 = 132.7       creditmanager.py:224
+                             effective weight                                                                                                                  
+                    INFO     07:31:55 | INFO     | 🔬 Stake recorded: Agent_Maverick_1 staked 86 CP on PAgent_Maverick_1 (Round 1,             thebureau.py:562
+                             own_proposal) - Effective weight: 132.7 (×1.543)                                                                                  
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Maverick_1 marked as Ready                                                   thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Maverick_1 marked as Ready                                                   thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Received stake from Agent_Opportunist_7: 117 CP → PAgent_Opportunist_7 (Round 1)         thebureau.py:484
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_7 -117 CP (Conviction stake (Round 1))               creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Conviction updated: Agent_Opportunist_7 → PAgent_Opportunist_7: 117CP × 1.543 =      creditmanager.py:224
+                             180.53 effective weight                                                                                                           
+                    INFO     07:31:55 | INFO     | 🔬 Stake recorded: Agent_Opportunist_7 staked 117 CP on PAgent_Opportunist_7 (Round 1,      thebureau.py:562
+                             own_proposal) - Effective weight: 180.53 (×1.543)                                                                                 
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Received stake from Agent_Opportunist_5: 34 CP → PAgent_Opportunist_5 (Round 1)          thebureau.py:484
+                    INFO     07:31:55 | INFO     | 🔬 Credit burned: Agent_Opportunist_5 -34 CP (Conviction stake (Round 1))                creditmanager.py:50
+                    INFO     07:31:55 | INFO     | 🔬 Conviction updated: Agent_Opportunist_5 → PAgent_Opportunist_5: 34CP × 1.543 = 52.46 creditmanager.py:224
+                             effective weight                                                                                                                  
+                    INFO     07:31:55 | INFO     | 🔬 Stake recorded: Agent_Opportunist_5 staked 34 CP on PAgent_Opportunist_5 (Round 1,       thebureau.py:562
+                             own_proposal) - Effective weight: 52.46 (×1.543)                                                                                  
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    INFO     07:31:55 | INFO     | 🔬 Transitioned to new phase: 3                                                             thebureau.py:112
+                    DEBUG    07:31:55 | DEBUG    | 💬 Phase Tick: 1                                                                            thebureau.py:113
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 13 — Phase STAKE (Phase Tick 2)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 14 — Phase STAKE (Phase Tick 3)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 15 — Phase STAKE (Phase Tick 4)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    WARNING  07:31:55 | WARNING  | 🔬 Timeout STAKE Phase [6] at tick 15                                                        thebureau.py:77
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 16 — Phase STAKE (Phase Tick 5)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 17 — Phase STAKE (Phase Tick 6)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 18 — Phase STAKE (Phase Tick 7)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 19 — Phase STAKE (Phase Tick 8)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 20 — Phase STAKE (Phase Tick 9)                                                    roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 21 — Phase FINALIZE (Phase Tick 1)                                                 roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Finalize Phase [11] with max think ticks 3                                    roundtable.py:159
+                    INFO     07:31:55 | INFO     | 🔬 Transitioned to new phase: 11                                                            thebureau.py:112
+                    DEBUG    07:31:55 | DEBUG    | 💬 Phase Tick: 1                                                                            thebureau.py:113
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 22 — Phase FINALIZE (Phase Tick 2)                                                 roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Finalize Phase [11] with max think ticks 3                                    roundtable.py:159
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 23 — Phase FINALIZE (Phase Tick 3)                                                 roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Finalize Phase [11] with max think ticks 3                                    roundtable.py:159
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 24 — Phase FINALIZE (Phase Tick 4)                                                 roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 Executing Finalize Phase [11] with max think ticks 3                                    roundtable.py:159
+                    WARNING  07:31:55 | WARNING  | 🔬 Timeout FINALIZE Phase [11] at tick 24                                                    thebureau.py:77
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Diplomat_7 marked as Ready                                                   thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Leader_6 marked as Ready                                                     thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Maverick_1 marked as Ready                                                   thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_7 marked as Ready                                                thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Agent Agent_Opportunist_5 marked as Ready                                                thebureau.py:237
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Ticking consensus...                                                                     thebureau.py:118
+                    DEBUG    07:31:55 | DEBUG    | 🔬 Tick 25 — Phase FINALIZE (Phase Tick 5)                                                 roundtable.py:332
+                    INFO     07:31:55 | INFO     | 🔬 All agents ready — transitioning to next phase.                                         roundtable.py:340
+                    INFO     07:31:55 | INFO     | 💬 Phase execution:                                                                         simulator.py:217
+                    INFO     07:31:55 | INFO     | 💬   Phase 0: PROPOSE                                                                       simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 1: FEEDBACK                                                                      simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 2: REVISE                                                                        simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 3: STAKE                                                                         simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 4: STAKE                                                                         simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 5: STAKE                                                                         simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 6: STAKE                                                                         simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 7: STAKE                                                                         simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 8: STAKE                                                                         simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 9: STAKE                                                                         simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 10: STAKE                                                                        simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬   Phase 11: FINALIZE                                                                     simulator.py:219
+                    INFO     07:31:55 | INFO     | 💬 Summary:                                                                                 simulator.py:220
+                    INFO     07:31:55 | INFO     | 💬   Simulation completed in 25 ticks across 12 phases.                                     simulator.py:221
+                    INFO     07:31:55 | INFO     | 🔬 Scenario 1 completed in 0.243s                                                           simulator.py:232
+                    INFO     07:31:55 | INFO     | 💬 === Simulation Timing Statistics ===                                                     simulator.py:242
+                    INFO     07:31:55 | INFO     | 💬 Total rounds: 1                                                                          simulator.py:243
+                    INFO     07:31:55 | INFO     | 💬 Fastest round: 0.243s                                                                    simulator.py:244
+                    INFO     07:31:55 | INFO     | 💬 Slowest round: 0.243s                                                                    simulator.py:245
+                    INFO     07:31:55 | INFO     | 💬 Average duration: 0.243s                                                                 simulator.py:246
+                    INFO     07:31:55 | INFO     | 🔬 Timing statistics calculated                                                             simulator.py:256
+=== Simulation Summary ===
+Simulation ID: 25071407-10
+Agent Pool: 100 agents
+Scenarios Completed: 1
+Agents per Scenario: 5
+Seeds Used: Pool=1113, Run=1719
+Total Runtime: 0.243s
+Performance: 0.243s / 0.243s / 0.243s (min/avg/max)
+                    INFO     07:31:55 | INFO     | 💬 === Simulation Summary ===                                                               simulator.py:272
+                    INFO     07:31:55 | INFO     | 💬 Simulation ID: 25071407-10                                                               simulator.py:273
+                    INFO     07:31:55 | INFO     | 💬 Agent Pool: 100 agents                                                                   simulator.py:274
+                    INFO     07:31:55 | INFO     | 💬 Scenarios Completed: 1                                                                   simulator.py:275
+                    INFO     07:31:55 | INFO     | 💬 Agents per Scenario: 5                                                                   simulator.py:276
+                    INFO     07:31:55 | INFO     | 💬 Seeds Used: Pool=1113, Run=1719                                                          simulator.py:277
+                    INFO     07:31:55 | INFO     | 💬 Total Runtime: 0.243s                                                                    simulator.py:279
+                    INFO     07:31:55 | INFO     | 💬 Performance: 0.243s / 0.243s / 0.243s (min/avg/max)                                      simulator.py:280
+                    INFO     07:31:55 | INFO     | 🔬 Simulation completed successfully                                                        simulator.py:286
+                    INFO     07:31:55 | INFO     | 💬 Simulation logging closed: 25071407-10                                                      simlog.py:133

@@ -13,6 +13,7 @@ class CreditManager:
         # Conviction tracking structures
         self.conviction_ledger = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> accumulated stake
         self.conviction_rounds = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> consecutive rounds
+        self.conviction_rounds_held = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> total rounds ever held
         
         # Log credit manager initialization
         logger.bind(event_dict={
@@ -187,7 +188,7 @@ class CreditManager:
         is_switching = current_proposal is not None and current_proposal != proposal_id
         
         if is_switching:
-            # Reset conviction on previous proposal
+            # Reset conviction on previous proposal but preserve rounds_held history
             self.conviction_rounds[agent_id][current_proposal] = 0
             logger.bind(event_dict={
                 "event_type": "conviction_switched",
@@ -196,12 +197,19 @@ class CreditManager:
                 "to_proposal_id": proposal_id,
                 "stake_amount": stake_amount,
                 "tick": tick,
-                "issue_id": issue_id
+                "issue_id": issue_id,
+                "payload": {
+                    "from_proposal": current_proposal,
+                    "to_proposal": proposal_id,
+                    "stake_amount": stake_amount,
+                    "previous_rounds_held": self.conviction_rounds_held[agent_id][current_proposal]
+                }
             }).info(f"Agent {agent_id} switched conviction from {current_proposal} to {proposal_id}")
         
         # Update conviction tracking
         self.conviction_ledger[agent_id][proposal_id] += stake_amount
         self.conviction_rounds[agent_id][proposal_id] += 1
+        self.conviction_rounds_held[agent_id][proposal_id] += 1  # Always increment total rounds held
         
         # Calculate conviction multiplier
         multiplier = self.calculate_conviction_multiplier(agent_id, proposal_id, conviction_params)
@@ -209,7 +217,7 @@ class CreditManager:
         total_conviction = self.conviction_ledger[agent_id][proposal_id]
         consecutive_rounds = self.conviction_rounds[agent_id][proposal_id]
         
-        # Log conviction update event
+        # Log conviction update event with structured payload
         logger.bind(event_dict={
             "event_type": "conviction_updated",
             "agent_id": agent_id,
@@ -220,7 +228,15 @@ class CreditManager:
             "total_conviction": total_conviction,
             "consecutive_rounds": consecutive_rounds,
             "tick": tick,
-            "issue_id": issue_id
+            "issue_id": issue_id,
+            "payload": {
+                "raw": stake_amount,
+                "multiplier": multiplier,
+                "weight": effective_weight,
+                "rounds_supported": consecutive_rounds,
+                "rounds_held": self.conviction_rounds_held[agent_id][proposal_id],
+                "total_conviction": total_conviction
+            }
         }).info(f"Conviction updated: {agent_id} → {proposal_id}: {stake_amount}CP × {multiplier} = {effective_weight} effective weight")
         
         return {
