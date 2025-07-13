@@ -1,18 +1,7 @@
 from models import AgentActor, Action, ACTION_QUEUE, Proposal
 from loguru import logger
 import random
-import math
-
-def linear(score: float) -> float:
-    return score          # 0–1 assumed
-
-def sigmoid(score: float, k: float = 5.0) -> float:
-    return 1 / (1 + math.exp(-k * (score - 0.5)))
-
-ACTIVATIONS = {
-    "linear": linear,
-    "sigmoid": sigmoid,
-}
+from utils import linear, sigmoid, ACTIVATIONS, generate_lorem_content
 
 # Trait default values for consistency
 TRAIT_DEFAULTS = {
@@ -48,19 +37,6 @@ def get_phase_memory(agent, phase_name: str) -> dict:
     """Get or initialize phase-specific memory for an agent."""
     return agent.memory.setdefault(phase_name, {})
 
-def generate_lorem_content(rng, word_count=60):
-    """Generate lorem ipsum content for proposals and revisions."""
-    words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
-            "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
-            "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
-            "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
-            "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
-            "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
-            "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
-            "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
-            "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
-            "augue", "feugait", "facilisi", "diam", "nonummy", "nibh", "euismod", "tincidunt"]
-    return " ".join(rng.choices(words, k=word_count))
 
 def weighted_trait_decision(traits, weights, rng, activation: str = "linear"):
     raw_score = sum(traits[t] * weights[t] for t in weights)

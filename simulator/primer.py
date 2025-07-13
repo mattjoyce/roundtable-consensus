@@ -2,6 +2,7 @@
 from models import GlobalConfig, RunConfig, AgentActor
 import random
 from loguru import logger
+from utils import generate_lorem_content
 
 class Primer:
     """Primer class to generate initial configurations for a simulation."""
@@ -10,7 +11,7 @@ class Primer:
 
     def generate_run_config(self, seed: int, num_agents: int) -> RunConfig:
         """Generates a RunConfig based on the global configuration and given seed."""
-        random.seed(seed)
+        rng = random.Random(seed)  # Use isolated random instance
         
         # Select agents from the agent pool and clone them to avoid modifying originals
         selected_agents_raw = self.gc.agent_pool.select_random(num_agents, seed)
@@ -22,14 +23,14 @@ class Primer:
             # Use the archetype from agent metadata (set during pool creation)
             intended_archetype = agent.metadata.get("base_archetype")
             base_profile, archetype_name = generate_base_profile(seed + i, intended_archetype)
-            mutated_profile = mutate_profile(base_profile, seed=seed + 1000 + i)
+            mutated_profile = mutate_profile(base_profile, seed=seed + SEED_OFFSET + i)
 
             agent.metadata = agent.metadata or {}
             agent.metadata["protocol_profile"] = mutated_profile
             agent.metadata["archetype"] = archetype_name
             agent.metadata["profile_origin"] = {
                 "seed": seed + i,
-                "mutations": 20,
+                "mutations": MUTATION_ROUNDS,
                 "base_archetype": archetype_name
             }
             
@@ -49,23 +50,15 @@ class Primer:
         )
 
     def _generate_lorem_proposal(self, seed: int) -> str:
-        random.seed(seed)
-        words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
-                "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
-                "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
-                "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
-                "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
-                "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
-                "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
-                "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
-                "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
-                "augue", "feugait", "facilisi", "lorem", "ipsum", "dolor", "diam", "nonummy", "nibh"]
-        
-        # Generate 50-80 words for bigger proposals
-        word_count = random.randint(50, 80)
-        return " ".join(random.choices(words, k=word_count))
+        rng = random.Random(seed)  # Use isolated random instance
+        word_count = rng.randint(50, 80)  # Generate 50-80 words for bigger proposals
+        return generate_lorem_content(rng, word_count)
 
-# Define 8 personality archetypes with distinct trait patterns
+# Constants for configuration
+MUTATION_ROUNDS = 20
+SEED_OFFSET = 1000
+
+# Define 10 personality archetypes with distinct trait patterns
 ARCHETYPES = {
     "Leader": {
         "compliance": 0.3, "initiative": 0.9, "adaptability": 0.7, "sociability": 0.8,
@@ -100,14 +93,17 @@ ARCHETYPES = {
         "self_interest": 0.6, "risk_tolerance": 0.7, "consistency": 0.7, "persuasiveness": 0.8
     },
     "Saboteur": {
-    "compliance": 0.05, "initiative": 0.8, "adaptability": 0.6, "sociability": 0.4,
-    "self_interest": 0.95, "risk_tolerance": 0.95, "consistency": 0.2, "persuasiveness": 0.7
+        "compliance": 0.05, "initiative": 0.8, "adaptability": 0.6, "sociability": 0.4,
+        "self_interest": 0.95, "risk_tolerance": 0.95, "consistency": 0.2, "persuasiveness": 0.7
     },
     "Caretaker": {
-    "compliance": 0.85, "initiative": 0.4, "adaptability": 0.7, "sociability": 0.9,
-    "self_interest": 0.15, "risk_tolerance": 0.25, "consistency": 0.75, "persuasiveness": 0.65
+        "compliance": 0.85, "initiative": 0.4, "adaptability": 0.7, "sociability": 0.9,
+        "self_interest": 0.15, "risk_tolerance": 0.25, "consistency": 0.75, "persuasiveness": 0.65
     }
 }
+
+# Cache archetype names for performance
+ARCHETYPE_NAMES = list(ARCHETYPES.keys())
 
 def generate_base_profile(seed: int, archetype_name: str = None) -> tuple[dict, str]:
     """Generate a base profile by using specified archetype or randomly selecting one.
@@ -123,7 +119,7 @@ def generate_base_profile(seed: int, archetype_name: str = None) -> tuple[dict, 
     
     # Use specified archetype or select randomly
     if archetype_name is None:
-        archetype_name = rng.choice(list(ARCHETYPES.keys()))
+        archetype_name = rng.choice(ARCHETYPE_NAMES)
     
     base_traits = ARCHETYPES[archetype_name].copy()
     
@@ -135,7 +131,7 @@ def generate_base_profile(seed: int, archetype_name: str = None) -> tuple[dict, 
     
     return base_traits, archetype_name
 
-def mutate_profile(profile: dict, seed: int, rounds: int = 20, delta: float = 0.05) -> dict:
+def mutate_profile(profile: dict, seed: int, rounds: int = MUTATION_ROUNDS, delta: float = 0.05) -> dict:
     rng = random.Random(seed)
     traits = list(profile.keys())
     new_profile = profile.copy()
