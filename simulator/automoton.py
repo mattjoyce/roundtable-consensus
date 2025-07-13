@@ -14,6 +14,54 @@ ACTIVATIONS = {
     "sigmoid": sigmoid,
 }
 
+# Trait default values for consistency
+TRAIT_DEFAULTS = {
+    "initiative": 0.5,
+    "compliance": 0.9,
+    "risk_tolerance": 0.2,
+    "persuasiveness": 0.5,
+    "sociability": 0.5,
+    "adaptability": 0.5,
+    "self_interest": 0.5,
+    "consistency": 0.5
+}
+
+def extract_traits(profile: dict) -> dict:
+    """Extract all traits from profile with consistent defaults."""
+    return {trait: profile.get(trait, default) for trait, default in TRAIT_DEFAULTS.items()}
+
+def signal_ready_action(agent_id: str, issue_id: str) -> None:
+    """Submit a signal_ready action to the queue."""
+    ACTION_QUEUE.submit(Action(
+        type="signal_ready",
+        agent_id=agent_id,
+        payload={"issue_id": issue_id}
+    ))
+
+def calculate_content_traits(profile: dict) -> tuple[float, float, float]:
+    """Calculate thoroughness, verbosity, and trait_factor for content sizing."""
+    thoroughness = profile.get("compliance", 0.5) + profile.get("consistency", 0.5)
+    verbosity = profile.get("sociability", 0.5)
+    return thoroughness, verbosity
+
+def get_phase_memory(agent, phase_name: str) -> dict:
+    """Get or initialize phase-specific memory for an agent."""
+    return agent.memory.setdefault(phase_name, {})
+
+def generate_lorem_content(rng, word_count=60):
+    """Generate lorem ipsum content for proposals and revisions."""
+    words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
+            "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
+            "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
+            "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
+            "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
+            "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
+            "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
+            "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
+            "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
+            "augue", "feugait", "facilisi", "diam", "nonummy", "nibh", "euismod", "tincidunt"]
+    return " ".join(rng.choices(words, k=word_count))
+
 def weighted_trait_decision(traits, weights, rng, activation: str = "linear"):
     raw_score = sum(traits[t] * weights[t] for t in weights)
     activation_fn = ACTIVATIONS.get(activation, linear)
@@ -43,15 +91,16 @@ def handle_propose(agent: AgentActor, payload: dict):
     issue_id = payload.get("issue_id", "unknown")
 
     # Get or initialize phase memory
-    memory = agent.memory.setdefault("propose", {})
+    memory = get_phase_memory(agent, "propose")
     has_acted = memory.get("has_acted", False)
     initial_decision = memory.get("initial_decision", None)
 
-    # Traits
-    initiative = profile.get("initiative", 0.5)
-    compliance = profile.get("compliance", 0.9)
-    risk = profile.get("risk_tolerance", 0.2)
-    persuasiveness = profile.get("persuasiveness", 0.5)
+    # Extract traits with consistent defaults
+    traits = extract_traits(profile)
+    initiative = traits["initiative"]
+    compliance = traits["compliance"]
+    risk = traits["risk_tolerance"]
+    persuasiveness = traits["persuasiveness"]
 
     decision_made = None
 
@@ -102,24 +151,10 @@ def handle_propose(agent: AgentActor, payload: dict):
             decision_made = "hold"
 
     if decision_made == "submit":
-        # Generate bigger lorem ipsum content for testing
-        def generate_lorem_content(rng, word_count=60):
-            words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
-                    "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
-                    "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
-                    "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
-                    "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
-                    "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
-                    "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
-                    "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
-                    "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
-                    "augue", "feugait", "facilisi", "diam", "nonummy", "nibh", "euismod", "tincidunt"]
-            return " ".join(rng.choices(words, k=word_count))
         
-        # Use traits to determine proposal size - similar to revision logic
-        thoroughness = profile.get("compliance", 0.5) + profile.get("consistency", 0.5)  # More methodical agents
-        verbosity = profile.get("sociability", 0.5)  # More social agents tend to be verbose  
-        initiative_boost = profile.get("initiative", 0.5) * 0.3  # Initiative agents may write more detailed proposals
+        # Use traits to determine proposal size
+        thoroughness, verbosity = calculate_content_traits(profile)
+        initiative_boost = traits["initiative"] * 0.3  # Initiative agents may write more detailed proposals
         trait_factor = (thoroughness + verbosity + initiative_boost) / 3.3  # Combine traits, normalize
         
         # Proposal size influenced by traits (30-70 words)
@@ -146,11 +181,7 @@ def handle_propose(agent: AgentActor, payload: dict):
         logger.info(f"{agent.agent_id} submitted proposal. (tick {tick}) [Content: {len(content.split())} words, {len(content)} chars] (trait_factor={trait_factor:.2f})")
 
     elif decision_made == "signal":
-        ACTION_QUEUE.submit(Action(
-            type="signal_ready",
-            agent_id=agent.agent_id,
-            payload={"issue_id": issue_id}
-        ))
+        signal_ready_action(agent.agent_id, issue_id)
         memory["has_acted"] = True
         logger.info(f"{agent.agent_id} signaled ready. (tick {tick})")
 
@@ -173,14 +204,15 @@ def handle_feedback(agent: AgentActor, payload: dict):
     profile = agent.metadata.get("protocol_profile", {})
     
     # Get or initialize feedback memory
-    memory = agent.memory.setdefault("feedback", {})
+    memory = get_phase_memory(agent, "feedback")
     feedback_given = memory.get("feedback_given", 0)
     
-    # Use agent traits to determine feedback intent
-    sociability = profile.get("sociability", 0.5)
-    initiative = profile.get("initiative", 0.5)
-    compliance = profile.get("compliance", 0.9)
-    persuasiveness = profile.get("persuasiveness", 0.5)
+    # Extract traits with consistent defaults
+    traits = extract_traits(profile)
+    sociability = traits["sociability"]
+    initiative = traits["initiative"]
+    compliance = traits["compliance"]
+    persuasiveness = traits["persuasiveness"]
     
     # Check if already at quota
     if feedback_given >= max_feedback:
@@ -271,23 +303,24 @@ def handle_revise(agent: AgentActor, payload: dict):
     profile = agent.metadata.get("protocol_profile", {})
     
     # Get or initialize revise memory
-    memory = agent.memory.setdefault("revise", {})
+    memory = get_phase_memory(agent, "revise")
     has_revised = memory.get("has_revised", False)
     
-    # Traits used for revision decisions
-    adaptability = profile.get("adaptability", 0.5)
-    self_interest = profile.get("self_interest", 0.5) 
-    compliance = profile.get("compliance", 0.9)
-    consistency = profile.get("consistency", 0.5)
-    risk_tolerance = profile.get("risk_tolerance", 0.2)
-    persuasiveness = profile.get("persuasiveness", 0.5)
+    # Extract traits with consistent defaults
+    traits = extract_traits(profile)
+    adaptability = traits["adaptability"]
+    self_interest = traits["self_interest"]
+    compliance = traits["compliance"]
+    consistency = traits["consistency"]
+    risk_tolerance = traits["risk_tolerance"]
+    persuasiveness = traits["persuasiveness"]
     
     # Check if agent has feedback on their proposal
     if not feedback_received:
         # For testing: Make agents more likely to revise even without feedback
         # Use a combination of traits to decide whether to make a "preemptive" revision
         should_revise_anyway, score, roll = weighted_trait_decision(
-            traits={"adaptability": adaptability, "initiative": profile.get("initiative", 0.5), "persuasiveness": persuasiveness},
+            traits={"adaptability": adaptability, "initiative": traits["initiative"], "persuasiveness": persuasiveness},
             weights={"adaptability": 0.6, "initiative": 0.25, "persuasiveness": 0.15},
             rng=rng,
             activation="linear"  # Preemptive revisions should be gradual decisions
@@ -299,22 +332,9 @@ def handle_revise(agent: AgentActor, payload: dict):
             delta = max(0.1, min(1.0, 0.1 + delta_factor * 0.6))  # Smaller deltas for preemptive revisions
             
             # Generate bigger revised content using lorem ipsum
-            def generate_lorem_content(rng, word_count=60):
-                words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
-                        "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
-                        "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
-                        "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
-                        "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
-                        "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
-                        "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
-                        "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
-                        "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
-                        "augue", "feugait", "facilisi", "diam", "nonummy", "nibh", "euismod", "tincidunt"]
-                return " ".join(rng.choices(words, k=word_count))
             
             # Use traits to determine revision size - more thorough agents write longer revisions
-            thoroughness = profile.get("compliance", 0.5) + profile.get("consistency", 0.5)  # More methodical agents
-            verbosity = profile.get("sociability", 0.5)  # More social agents tend to be verbose
+            thoroughness, verbosity = calculate_content_traits(profile)
             trait_factor = (thoroughness + verbosity) / 3.0  # Combine traits, normalize
             
             # Base revision size influenced by traits (20-80 words)
@@ -345,18 +365,14 @@ def handle_revise(agent: AgentActor, payload: dict):
         
         # Fall back to participation-based ready signal (not about rule compliance)
         should_signal, score2, roll2 = weighted_trait_decision(
-            traits={"compliance": compliance, "initiative": profile.get("initiative", 0.5), "sociability": profile.get("sociability", 0.5)},
+            traits={"compliance": compliance, "initiative": traits["initiative"], "sociability": traits["sociability"]},
             weights={"compliance": 0.5, "initiative": 0.3, "sociability": 0.2},  # Compliance = process participation, not rule-following
             rng=rng,
             activation="linear"  # Participation decisions should be gradual
         )
         
         if should_signal:
-            ACTION_QUEUE.submit(Action(
-                type="signal_ready",
-                agent_id=agent.agent_id,
-                payload={"issue_id": issue_id}
-            ))
+            signal_ready_action(agent.agent_id, issue_id)
             logger.info(f"[REVISE] {agent.agent_id} no feedback received, signaling ready (participation {score2:.2f} vs roll {roll2:.2f}) | Weights: comp=0.5, init=0.3, soc=0.2")
         else:
             logger.info(f"[REVISE] {agent.agent_id} no feedback received, waiting (participation {score2:.2f} vs roll {roll2:.2f}) | Weights: comp=0.5, init=0.3, soc=0.2")
@@ -374,11 +390,7 @@ def handle_revise(agent: AgentActor, payload: dict):
         )
         
         if not should_revise_again:
-            ACTION_QUEUE.submit(Action(
-                type="signal_ready",
-                agent_id=agent.agent_id,
-                payload={"issue_id": issue_id}
-            ))
+            signal_ready_action(agent.agent_id, issue_id)
             logger.info(f"[REVISE] {agent.agent_id} already revised, signaling ready (consistency check {score:.2f} vs roll {roll:.2f})")
             return {"ack": True}
     
@@ -401,11 +413,7 @@ def handle_revise(agent: AgentActor, payload: dict):
     )
     
     if not should_revise:
-        ACTION_QUEUE.submit(Action(
-            type="signal_ready",
-            agent_id=agent.agent_id,
-            payload={"issue_id": issue_id}
-        ))
+        signal_ready_action(agent.agent_id, issue_id)
         logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO REVISION | Weights: adapt=0.4, self=0.25, risk=0.2, pers=0.15")
         return {"ack": True}
     
@@ -415,23 +423,10 @@ def handle_revise(agent: AgentActor, payload: dict):
     delta = max(0.1, min(1.0, 0.2 + delta_factor * 0.8))  # Range [0.1, 1.0]
     
     # Generate bigger revised content using lorem ipsum
-    def generate_lorem_content(rng, word_count=60):
-        words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", 
-                "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", 
-                "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", 
-                "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo", 
-                "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate", 
-                "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint", 
-                "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia", 
-                "deserunt", "mollit", "anim", "id", "est", "laborum", "suscipit", "lobortis", 
-                "nisl", "aliquam", "erat", "volutpat", "blandit", "praesent", "zzril", "delenit", 
-                "augue", "feugait", "facilisi", "diam", "nonummy", "nibh", "euismod", "tincidunt"]
-        return " ".join(rng.choices(words, k=word_count))
     
     # Use traits to determine revision size for feedback-based revisions
-    thoroughness = profile.get("compliance", 0.5) + profile.get("consistency", 0.5)  # More methodical agents
-    verbosity = profile.get("sociability", 0.5)  # More social agents tend to be verbose
-    adaptability_boost = profile.get("adaptability", 0.5) * 0.5  # Adaptable agents may write more when responding to feedback
+    thoroughness, verbosity = calculate_content_traits(profile)
+    adaptability_boost = traits["adaptability"] * 0.5  # Adaptable agents may write more when responding to feedback
     persuasive_boost = persuasiveness * 0.3  # Persuasive agents write more to convince
     trait_factor = (thoroughness + verbosity + adaptability_boost + persuasive_boost) / 3.8  # Combine traits, normalize
     
@@ -477,18 +472,19 @@ def handle_stake(agent: AgentActor, payload: dict):
     profile = agent.metadata.get("protocol_profile", {})
     
     # Get or initialize stake memory
-    memory = agent.memory.setdefault("stake", {})
+    memory = get_phase_memory(agent, "stake")
     stakes_this_round = memory.get(f"round_{round_number}_stakes", 0)
     
-    # Agent traits used for staking decisions
-    self_interest = profile.get("self_interest", 0.5)
-    risk_tolerance = profile.get("risk_tolerance", 0.2)
-    compliance = profile.get("compliance", 0.9)
-    sociability = profile.get("sociability", 0.5)
-    initiative = profile.get("initiative", 0.5)
-    consistency = profile.get("consistency", 0.5)
-    adaptability = profile.get("adaptability", 0.5)
-    persuasiveness = profile.get("persuasiveness", 0.5)
+    # Extract traits with consistent defaults
+    traits = extract_traits(profile)
+    self_interest = traits["self_interest"]
+    risk_tolerance = traits["risk_tolerance"]
+    compliance = traits["compliance"]
+    sociability = traits["sociability"]
+    initiative = traits["initiative"]
+    consistency = traits["consistency"]
+    adaptability = traits["adaptability"]
+    persuasiveness = traits["persuasiveness"]
     
     # Get current balance from memory or assume it's tracked elsewhere
     # For now, we'll use a simple heuristic based on traits
@@ -513,11 +509,7 @@ def handle_stake(agent: AgentActor, payload: dict):
     
     if not should_stake:
         # Signal ready without staking
-        ACTION_QUEUE.submit(Action(
-            type="signal_ready",
-            agent_id=agent.agent_id,
-            payload={"issue_id": issue_id}
-        ))
+        signal_ready_action(agent.agent_id, issue_id)
         logger.info(f"[STAKE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO STAKE | Round {round_number} | Weights: risk=0.4, init=0.3, self=0.2, comp=0.1")
         return {"ack": True}
     
@@ -601,11 +593,7 @@ def handle_stake(agent: AgentActor, payload: dict):
     ))
     
     # Always signal ready after staking
-    ACTION_QUEUE.submit(Action(
-        type="signal_ready",
-        agent_id=agent.agent_id,
-        payload={"issue_id": issue_id}
-    ))
+    signal_ready_action(agent.agent_id, issue_id)
     
     # Update memory
     memory[f"round_{round_number}_stakes"] = stakes_this_round + 1
