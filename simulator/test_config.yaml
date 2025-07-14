@@ -1,28 +1,28 @@
 # Test configuration with different values
 simulation:
-  max_scenarios: 5
-  pool_seed: 9999
-  run_seed: 8888
+  max_scenarios: 1
+  pool_seed: 1113
+  run_seed: 1719
   num_agents: 8
 
 agent_pool:
-  size_multiplier: 5
-  min_size: 50
+  size_multiplier: 10
+  min_size: 100
   balance_range:
     min: 100
     max: 500
 
 traits:
-  mutation_rounds: 15
+  mutation_rounds: 20
   proposal_word_range:
     min: 30
     max: 60
 
 consensus:
-  assignment_award: 200
-  max_feedback_per_agent: 5
-  feedback_stake: 10
-  proposal_self_stake: 75
+  assignment_award: 100
+  max_feedback_per_agent: 3
+  feedback_stake: 15
+  proposal_self_stake: 50
   revision_cycles:
     min: 2
     max: 4
@@ -30,8 +30,8 @@ consensus:
     min: 5
     max: 8
   conviction_params:
-    MaxMultiplier: 1.5
-    TargetFraction: 0.95
+    MaxMultiplier: 2.0
+    TargetFraction: 0.98
 
 issue:
   problem_statement: "Custom test problem statement."
