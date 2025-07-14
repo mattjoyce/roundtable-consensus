@@ -126,6 +126,10 @@ class TheBureau:
                 }).info(f"Transitioned to new phase: {consensus.get_current_phase().phase_number}")
                 logger.debug(f"Phase Tick: {consensus.state['phase_tick']}")
             
+            # Update consensus state with current agent proposal mappings
+            if self.current_issue:
+                consensus.state["agent_proposal_ids"] = dict(self.current_issue.agent_to_proposal_id)
+            
             logger.bind(event_dict={
                 "event_type": "consensus_tick",
                 "tick": consensus.state['tick']
@@ -238,9 +242,11 @@ class TheBureau:
         proposal = Proposal(
             proposal_id=f"PNOACTION",  
             content="Take no Action",
-            agent_id=agent_id,
+            agent_id=agent_id,  # Agent assigned to this proposal (backer)
             issue_id=issue_id,
-            tick=tick
+            tick=tick,
+            author_id="system",  # System is the author
+            author_type="system"  # Mark as system-authored
         )
         return proposal
     
@@ -292,11 +298,13 @@ class TheBureau:
 
     def receive_revision(self, agent_id: str, payload: dict):
         """Process a revision action from an agent - creates versioned proposals."""
-        proposal_id = payload.get("proposal_id")
         new_content = payload.get("new_content")
         delta = payload.get("delta")
         tick = payload.get("tick", 0)
         issue_id = payload.get("issue_id")
+        
+        # Look up agent's current proposal ID
+        proposal_id = self.current_issue.agent_to_proposal_id.get(agent_id) if self.current_issue else None
         
         logger.bind(event_dict={
             "event_type": "revision_received",
@@ -306,7 +314,17 @@ class TheBureau:
             "issue_id": issue_id
         }).info(f"Received revision from {agent_id}: {proposal_id} (Δ={delta})")
         
-        # Validation 1: Check if there's an active issue
+        # Validation 1: Check if agent has a proposal to revise
+        if not proposal_id:
+            logger.bind(event_dict={
+                "event_type": "revision_rejected",
+                "agent_id": agent_id,
+                "reason": "no_proposal_to_revise"
+            }).warning(f"Rejected revision from {agent_id}: Agent has no proposal to revise")
+            return
+        
+        
+        # Validation 2: Check if there's an active issue
         if not self.current_issue or self.current_issue.issue_id != issue_id:
             logger.bind(event_dict={
                 "event_type": "revision_rejected",
@@ -324,33 +342,7 @@ class TheBureau:
             }).warning(f"Rejected revision from {agent_id}: Not assigned to issue")
             return
         
-        # Validation 3: Check if proposal is owned by agent (handle version mismatch)
-        agent_proposal_id = self.current_issue.agent_to_proposal_id.get(agent_id)
-        
-        # If agent submitted base proposal ID but has versioned ID, use the current version
-        if agent_proposal_id != proposal_id:
-            # Check if the proposal_id is a base version of the agent's current proposal
-            base_proposal_id = f"P{agent_id}"
-            if proposal_id == base_proposal_id and agent_proposal_id and agent_proposal_id.startswith(base_proposal_id):
-                # Agent submitted base ID but has versioned ID - use the versioned one
-                proposal_id = agent_proposal_id
-                logger.bind(event_dict={
-                    "event_type": "revision_id_corrected",
-                    "agent_id": agent_id,
-                    "submitted_id": payload.get("proposal_id"),
-                    "corrected_id": proposal_id
-                }).info(f"Corrected proposal ID for {agent_id}: {payload.get('proposal_id')} → {proposal_id}")
-            else:
-                logger.bind(event_dict={
-                    "event_type": "revision_rejected",
-                    "agent_id": agent_id,
-                    "reason": "not_proposal_owner",
-                    "expected_proposal_id": agent_proposal_id,
-                    "received_proposal_id": proposal_id
-                }).warning(f"Rejected revision from {agent_id}: Not owner of proposal {proposal_id}")
-                return
-        
-        # Validation 4: Check revision delta and new content are present
+        # Validation 3: Check revision delta and new content are present
         if not new_content or delta is None or delta < 0.1 or delta > 1.0:
             logger.bind(event_dict={
                 "event_type": "revision_rejected",
@@ -395,6 +387,18 @@ class TheBureau:
             }).warning(f"Rejected revision from {agent_id}: Active proposal {proposal_id} not found")
             return
         
+        # Validation: Check if agent is the author of the proposal
+        if old_proposal.author_id != agent_id:
+            logger.bind(event_dict={
+                "event_type": "revision_rejected",
+                "agent_id": agent_id,
+                "reason": "not_proposal_author",
+                "proposal_id": proposal_id,
+                "actual_author": old_proposal.author_id,
+                "author_type": old_proposal.author_type
+            }).warning(f"Rejected revision from {agent_id}: Not author of proposal {proposal_id} (author: {old_proposal.author_id}, type: {old_proposal.author_type})")
+            return
+        
         # Create versioned proposal - extract base ID to avoid nested versions
         new_version = old_proposal.version + 1
         
@@ -424,7 +428,9 @@ class TheBureau:
             },
             version=new_version,
             parent_id=proposal_id,
-            active=True
+            active=True,
+            author_id=old_proposal.author_id,  # Inherit author from original
+            author_type=old_proposal.author_type  # Inherit author type
         )
         
         # Add new proposal to issue

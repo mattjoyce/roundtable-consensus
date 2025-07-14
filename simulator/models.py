@@ -8,12 +8,14 @@ class Proposal(BaseModel):
     tick: int
     proposal_id: str
     content: str
-    agent_id: str
+    agent_id: str  # Keep for backward compatibility, represents current backer/assignee
     issue_id: str
     metadata: Optional[Dict[str, str]] = {}
     version: int = 1
     parent_id: Optional[str] = None
     active: bool = True
+    author_id: Optional[str] = None  # Who actually created/authored this proposal
+    author_type: str = "agent"  # "agent" or "system"
 
 class Agent(BaseModel):
     agent_id: str

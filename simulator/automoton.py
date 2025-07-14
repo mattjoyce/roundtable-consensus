@@ -146,7 +146,9 @@ def handle_propose(agent: AgentActor, payload: dict):
             agent_id=agent.agent_id,
             issue_id=issue_id,
             tick=tick,
-            metadata={"origin": "trait:initiative"}
+            metadata={"origin": "trait:initiative"},
+            author_id=agent.agent_id,
+            author_type="agent"
         )
         ACTION_QUEUE.submit(Action(
             type="submit_proposal",
@@ -274,7 +276,6 @@ def handle_revise(agent: AgentActor, payload: dict):
     issue_id = payload.get("issue_id", "unknown")
     tick = payload.get("tick", 0)
     feedback_received = payload.get("feedback_received", [])  # Feedback on agent's proposal
-    
     rng = agent.rng
     profile = agent.metadata.get("protocol_profile", {})
     
@@ -419,7 +420,6 @@ def handle_revise(agent: AgentActor, payload: dict):
         type="revise",
         agent_id=agent.agent_id,
         payload={
-            "proposal_id": f"P{agent.agent_id}",  # Assuming consistent proposal ID format
             "new_content": new_content,
             "delta": delta,
             "tick": tick,
@@ -434,6 +434,7 @@ def handle_revise(agent: AgentActor, payload: dict):
     logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → REVISING (Δ={delta:.2f}) | Weights: adapt=0.4, self=0.25, risk=0.2, pers=0.15 [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
     
     return {"ack": True}
+
 
 def handle_stake(agent: AgentActor, payload: dict):
     """Handle STAKE phase signals for agents to decide on conviction-based staking."""
@@ -490,7 +491,7 @@ def handle_stake(agent: AgentActor, payload: dict):
         return {"ack": True}
     
     # Decision 2: Choose proposal to support
-    own_proposal_id = f"P{agent.agent_id}"
+    own_proposal_id = payload.get("current_proposal_id", f"P{agent.agent_id}")
     
     # First check: stake on own proposal?
     stake_on_own, score, roll = weighted_trait_decision(
