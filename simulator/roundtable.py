@@ -95,13 +95,17 @@ class RevisePhase(Phase):
             # TODO: Get actual feedback received for this agent's proposal
             feedback_received = []  # Placeholder - should be populated with actual feedback
             
+            # Get agent's current proposal ID - this should be passed from bureau
+            current_proposal_id = state.get("agent_proposal_ids", {}).get(agent.agent_id)
+            
             agent.on_signal({
                 "type": "Revise",
                 "cycle_number": self.cycle_number,
                 "tick": tick,
                 "issue_id": issue_id,
                 "proposal_self_stake": self.proposal_self_stake,
-                "feedback_received": feedback_received
+                "feedback_received": feedback_received,
+                "current_proposal_id": current_proposal_id
             })
         
         return state
@@ -132,13 +136,17 @@ class StakePhase(Phase):
         for agent in agents:
             # Include current balance in the signal
             current_balance = creditmgr.get_balance(agent.agent_id) if creditmgr else 0
+            # Get agent's current proposal ID
+            current_proposal_id = state.get("agent_proposal_ids", {}).get(agent.agent_id)
+            
             agent.on_signal({
                 "type": "Stake",
                 "round_number": self.round_number,
                 "conviction_params": self.conviction_params,
                 "tick": tick,
                 "issue_id": issue_id,
-                "current_balance": current_balance
+                "current_balance": current_balance,
+                "current_proposal_id": current_proposal_id
             })
         
         return state
@@ -357,6 +365,8 @@ class Consensus:
             # Execute phase logic
             if current_phase:
                 agents = list(self.rc.selected_agents.values())
+                # agent_proposal_ids should be set by the bureau
+                
                 self.state = current_phase.execute(self.state, agents)
 
         # Record the state in the ledger
