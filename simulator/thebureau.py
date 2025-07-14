@@ -66,6 +66,20 @@ class TheBureau:
 
         while not consensus._is_complete():
             self._process_pending_actions()
+            
+            # Check if we should trigger finalization after final STAKE round
+            if (consensus.is_final_stake_round() and 
+                consensus.all_agents_ready and 
+                not consensus.state.get("issue_finalized", False)):
+                
+                logger.bind(event_dict={
+                    "event_type": "finalization_trigger",
+                    "tick": consensus.state['tick'],
+                    "issue_id": self.current_issue.issue_id if self.current_issue else None
+                }).info("Final STAKE round complete - triggering finalization")
+                
+                consensus.finalize_issue()
+            
             if self.current_consensus.is_think_tick_over():
                 current_phase = consensus.get_current_phase()
                 logger.bind(event_dict={
