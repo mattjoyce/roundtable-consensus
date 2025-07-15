@@ -10,10 +10,99 @@ import json
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
+from enum import Enum
 
+from pydantic import BaseModel
 from loguru import logger
 from rich.console import Console
 from rich.logging import RichHandler
+
+
+class EventType(str, Enum):
+    """Event types for structured logging"""
+    # Credit Management
+    CREDIT_MANAGER_INIT = "credit_manager_init"
+    CREDIT_BURN = "credit_burn"
+    INSUFFICIENT_CREDIT = "insufficient_credit"
+    CREDIT_AWARD = "credit_award"
+    STAKE_RECORDED = "stake_recorded"
+    STAKE_TRANSFERRED = "stake_transferred"
+    CONVICTION_SWITCHED = "conviction_switched"
+    CONVICTION_UPDATED = "conviction_updated"
+    
+    # Simulation Lifecycle
+    SIMULATION_START = "simulation_start"
+    SIMULATION_COMPLETE = "simulation_complete"
+    SIMULATION_ERROR = "simulation_error"
+    SCENARIO_START = "scenario_start"
+    SCENARIO_COMPLETE = "scenario_complete"
+    TIMING_STATS = "timing_stats"
+    
+    # Consensus Engine
+    PHASE_EXECUTION = "phase_execution"
+    PHASE_TRANSITION = "phase_transition"
+    CONSENSUS_TICK = "consensus_tick"
+    PROPOSAL_STAKE_TRANSFERRED = "proposal_stake_transferred"
+    
+    # Finalization
+    FINALIZATION_START = "finalization_start"
+    FINALIZATION_WARNING = "finalization_warning"
+    FINALIZATION_COMPLETE = "finalization_complete"
+    FINALIZATION_DECISION = "finalization_decision"
+    FINALIZATION_TRIGGER = "finalization_trigger"
+    INFLUENCE_RECORDED = "influence_recorded"
+    ISSUE_FINALIZED = "issue_finalized"
+    
+    # Proposals
+    PROPOSAL_RECEIVED = "proposal_received"
+    PROPOSAL_ACCEPTED = "proposal_accepted"
+    PROPOSAL_REJECTED = "proposal_rejected"
+    
+    # Feedback
+    FEEDBACK_REJECTED = "feedback_rejected"
+    
+    # Revisions
+    REVISION_RECEIVED = "revision_received"
+    REVISION_ACCEPTED = "revision_accepted"
+    REVISION_REJECTED = "revision_rejected"
+    REVISION_WARNING = "revision_warning"
+    
+    # Staking
+    STAKE_RECEIVED = "stake_received"
+    STAKE_REJECTED = "stake_rejected"
+    
+    # Agent Actions
+    AGENT_READY = "agent_ready"
+    PHASE_TIMEOUT = "phase_timeout"
+
+
+class PhaseType(str, Enum):
+    """Phase types in consensus process"""
+    INIT = "INIT"
+    PROPOSE = "PROPOSE"
+    FEEDBACK = "FEEDBACK"
+    REVISE = "REVISE"
+    STAKE = "STAKE"
+    FINALIZE = "FINALIZE"
+
+
+class LogLevel(str, Enum):
+    """Log levels for structured logging"""
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+
+class LogEntry(BaseModel):
+    """Structured log entry with full type safety"""
+    tick: Optional[int] = None
+    phase: Optional[PhaseType] = None
+    event_type: EventType
+    agent_id: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    message: str
+    level: LogLevel = LogLevel.INFO
 
 
 class SQLiteSink:
@@ -178,3 +267,47 @@ def generate_sim_id() -> str:
     
     next_suffix = max(suffixes) + 1 if suffixes else 1
     return f"{base_id}-{next_suffix}"
+
+
+def log_event(entry: LogEntry, forensic: bool = True):
+    """
+    Log a structured event with type safety and forensic capture.
+    
+    Args:
+        entry: LogEntry with structured event data
+        forensic: If True, captures to SQLite database (default: True)
+    """
+    import inspect
+    
+    # Get the caller's frame info to preserve original file/line
+    frame = inspect.currentframe()
+    try:
+        caller_frame = frame.f_back
+        caller_info = {
+            "name": caller_frame.f_code.co_filename.split('/')[-1],  # Just filename
+            "function": caller_frame.f_code.co_name,
+            "line": caller_frame.f_lineno
+        }
+    finally:
+        del frame  # Prevent reference cycles
+    
+    if forensic:
+        # Use existing logger.bind() format for backward compatibility
+        # Use opt() to preserve caller information
+        logger.opt(depth=1).bind(event_dict={
+            "tick": entry.tick,
+            "phase": entry.phase.value if entry.phase else None,
+            "event_type": entry.event_type.value,
+            "agent_id": entry.agent_id,
+            "payload": entry.payload
+        }).info(entry.message)
+    else:
+        # Console-only logging based on level with preserved caller info
+        if entry.level == LogLevel.DEBUG:
+            logger.opt(depth=1).debug(entry.message)
+        elif entry.level == LogLevel.WARNING:
+            logger.opt(depth=1).warning(entry.message)
+        elif entry.level == LogLevel.ERROR:
+            logger.opt(depth=1).error(entry.message)
+        else:
+            logger.opt(depth=1).info(entry.message)

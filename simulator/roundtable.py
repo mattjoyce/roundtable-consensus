@@ -1,7 +1,7 @@
 from models import GlobalConfig, RunConfig, AgentActor
 import random
 from typing import List, Dict
-from loguru import logger
+from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
 
 class Phase:
     def __init__(self, phase_type: str, phase_number: int, max_think_ticks: int = 3):
@@ -20,13 +20,16 @@ class ProposePhase(Phase):
         super().__init__("PROPOSE", phase_number, max_think_ticks)
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        logger.bind(event_dict={
-            "event_type": "phase_execution",
-            "tick": state.get("tick"),
-            "phase": "PROPOSE",
-            "phase_number": self.phase_number,
-            "max_think_ticks": self.max_think_ticks
-        }).info(f"Executing Propose Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}")
+        log_event(LogEntry(
+            tick=state.get("tick"),
+            phase=PhaseType.PROPOSE,
+            event_type=EventType.PHASE_EXECUTION,
+            payload={
+                "phase_number": self.phase_number,
+                "max_think_ticks": self.max_think_ticks
+            },
+            message=f"Executing Propose Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}"
+        ))
         for agent in agents:
             agent.on_signal({
                 "type": "Propose",
@@ -48,14 +51,17 @@ class FeedbackPhase(Phase):
         self.max_feedback_per_agent = max_feedback_per_agent
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        logger.bind(event_dict={
-            "event_type": "phase_execution",
-            "tick": state.get("tick"),
-            "phase": "FEEDBACK",
-            "phase_number": self.phase_number,
-            "cycle_number": self.cycle_number,
-            "max_feedback_per_agent": self.max_feedback_per_agent
-        }).info(f"Executing Feedback Phase [{self.phase_number}] for cycle {self.cycle_number} with max feedback per agent {self.max_feedback_per_agent}")
+        log_event(LogEntry(
+            tick=state.get("tick"),
+            phase=PhaseType.FEEDBACK,
+            event_type=EventType.PHASE_EXECUTION,
+            payload={
+                "phase_number": self.phase_number,
+                "cycle_number": self.cycle_number,
+                "max_feedback_per_agent": self.max_feedback_per_agent
+            },
+            message=f"Executing Feedback Phase [{self.phase_number}] for cycle {self.cycle_number} with max feedback per agent {self.max_feedback_per_agent}"
+        ))
         
         issue_id = state.get("issue_id")
         tick = state.get("tick")
@@ -88,14 +94,17 @@ class RevisePhase(Phase):
         self.proposal_self_stake = proposal_self_stake
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        logger.bind(event_dict={
-            "event_type": "phase_execution",
-            "tick": state.get("tick"),
-            "phase": "REVISE",
-            "phase_number": self.phase_number,
-            "cycle_number": self.cycle_number,
-            "proposal_self_stake": self.proposal_self_stake
-        }).info(f"Executing Revise Phase [{self.phase_number}] for cycle {self.cycle_number} with proposal self-stake {self.proposal_self_stake}")
+        log_event(LogEntry(
+            tick=state.get("tick"),
+            phase=PhaseType.REVISE,
+            event_type=EventType.PHASE_EXECUTION,
+            payload={
+                "phase_number": self.phase_number,
+                "cycle_number": self.cycle_number,
+                "proposal_self_stake": self.proposal_self_stake
+            },
+            message=f"Executing Revise Phase [{self.phase_number}] for cycle {self.cycle_number} with proposal self-stake {self.proposal_self_stake}"
+        ))
         
         issue_id = state.get("issue_id")
         tick = state.get("tick")
@@ -134,14 +143,17 @@ class StakePhase(Phase):
         self.conviction_params = conviction_params
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        logger.bind(event_dict={
-            "event_type": "phase_execution",
-            "tick": state.get("tick"),
-            "phase": "STAKE",
-            "phase_number": self.phase_number,
-            "round_number": self.round_number,
-            "conviction_params": self.conviction_params
-        }).info(f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}")
+        log_event(LogEntry(
+            tick=state.get("tick"),
+            phase=PhaseType.STAKE,
+            event_type=EventType.PHASE_EXECUTION,
+            payload={
+                "phase_number": self.phase_number,
+                "round_number": self.round_number,
+                "conviction_params": self.conviction_params
+            },
+            message=f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}"
+        ))
         
         issue_id = state.get("issue_id")
         tick = state.get("tick")
@@ -168,17 +180,20 @@ class StakePhase(Phase):
                     issue_id=issue_id
                 )
                 
-                logger.bind(event_dict={
-                    "event_type": "proposal_stake_transferred",
-                    "tick": tick,
-                    "phase": "STAKE",
-                    "agent_id": agent_id,
-                    "proposal_id": proposal_id,
-                    "stake_amount": stake_amount,
-                    "conviction_multiplier": conviction_details["multiplier"],
-                    "effective_weight": conviction_details["effective_weight"],
-                    "issue_id": issue_id
-                }).info(f"Transferred initial proposal stake: {agent_id} {stake_amount} CP → {proposal_id} (Round 1, effective weight: {conviction_details['effective_weight']})")
+                log_event(LogEntry(
+                    tick=tick,
+                    phase=PhaseType.STAKE,
+                    event_type=EventType.PROPOSAL_STAKE_TRANSFERRED,
+                    payload={
+                        "agent_id": agent_id,
+                        "proposal_id": proposal_id,
+                        "stake_amount": stake_amount,
+                        "conviction_multiplier": conviction_details["multiplier"],
+                        "effective_weight": conviction_details["effective_weight"],
+                        "issue_id": issue_id
+                    },
+                    message=f"Transferred initial proposal stake: {agent_id} {stake_amount} CP → {proposal_id} (Round 1, effective weight: {conviction_details['effective_weight']})"
+                ))
         
         for agent in agents:
             # Include current balance in the signal
@@ -210,14 +225,16 @@ class FinalizePhase(Phase):
         super().__init__("FINALIZE", phase_number, max_think_ticks)
     
     def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        logger.bind(event_dict={
-            "event_type": "phase_execution",
-            "tick": state.get("tick"),
-            "phase": "FINALIZE",
+        log_event(LogEntry(
+            tick=state.get("tick"),
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.PHASE_EXECUTION,
+            payload={
             "phase_number": self.phase_number,
             "max_think_ticks": self.max_think_ticks
-        }).info(f"Executing Finalize Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}")
-        
+            },
+            message=f"Executing Finalize Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}"
+        ))
         # Signal agents about finalization phase (optional)
         issue_id = state.get("issue_id")
         tick = state.get("tick")
@@ -397,24 +414,30 @@ class Consensus:
         else:
             self.state["phase_tick"] += 1
 
-        logger.bind(event_dict={
-            "event_type": "consensus_tick",
-            "tick": self.state['tick'],
-            "phase": self.state['current_phase'],
-            "phase_tick": self.state['phase_tick']
-        }).info(f"Tick {self.state['tick']} — Phase {self.state['current_phase']} (Phase Tick {self.state['phase_tick']})")
+        log_event(LogEntry(
+            tick=self.state['tick'],
+            phase=PhaseType(self.state['current_phase']) if self.state['current_phase'] else None,
+            event_type=EventType.CONSENSUS_TICK,
+            payload={
+                "phase_tick": self.state['phase_tick']
+            },
+            message=f"Tick {self.state['tick']} — Phase {self.state['current_phase']} (Phase Tick {self.state['phase_tick']})"
+        ))
 
         # Phase complete: skip execution, advance phase
         current_phase = self.get_current_phase()
         phase_ticks_expired = current_phase and self.state['phase_tick'] > current_phase.max_think_ticks
         
         if self.all_agents_ready and phase_ticks_expired:
-            logger.bind(event_dict={
-                "event_type": "phase_transition",
-                "tick": self.state['tick'],
-                "phase": self.state['current_phase'],
-                "current_phase_index": self.current_phase_index
-            }).info("All agents ready and think ticks expired — transitioning to next phase.")
+            log_event(LogEntry(
+                tick=self.state['tick'],
+                phase=PhaseType(self.state['current_phase']) if self.state['current_phase'] else None,
+                event_type=EventType.PHASE_TRANSITION,
+                payload={
+                    "current_phase_index": self.current_phase_index
+                },
+                message="All agents ready and think ticks expired — transitioning to next phase."
+            ))
             self.current_phase_index += 1
 
         else:
@@ -475,24 +498,30 @@ class Consensus:
         issue_id = self.state.get("issue_id")
         tick = self.state.get("tick")
         
-        logger.bind(event_dict={
-            "event_type": "finalization_start",
-            "tick": tick,
-            "phase": "FINALIZE",
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.FINALIZATION_START,
+            payload={
             "issue_id": issue_id
-        }).info(f"Starting finalization for issue {issue_id} at tick {tick}")
+            },
+            message=f"Starting finalization for issue {issue_id} at tick {tick}"
+        ))
         
         # Aggregate conviction weights by proposal
         proposal_weights = self._aggregate_conviction_weights()
         
         if not proposal_weights:
-            logger.bind(event_dict={
-                "event_type": "finalization_warning",
-                "tick": tick,
-                "phase": "FINALIZE",
-                "issue_id": issue_id,
-                "reason": "no_stakes_found"
-            }).warning("No conviction stakes found for finalization")
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType.FINALIZE,
+                event_type=EventType.FINALIZATION_WARNING,
+                payload={
+                    "issue_id": issue_id,
+                    "reason": "no_stakes_found"
+                },
+                message="No conviction stakes found for finalization"
+            ))
             self._emit_no_winner_event(issue_id, tick)
             self._print_finalization_summary(proposal_weights, None, issue_id, tick)
             return
@@ -512,13 +541,16 @@ class Consensus:
         # Print finalization summary
         self._print_finalization_summary(proposal_weights, winner_proposal_id, issue_id, tick)
         
-        logger.bind(event_dict={
-            "event_type": "finalization_complete",
-            "tick": tick,
-            "phase": "FINALIZE",
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.FINALIZATION_COMPLETE,
+            payload={
             "issue_id": issue_id,
             "winner_proposal_id": winner_proposal_id
-        }).info(f"Finalization completed for issue {issue_id} - Winner: {winner_proposal_id}")
+            },
+            message=f"Finalization completed for issue {issue_id} - Winner: {winner_proposal_id}"
+        ))
     
     def _aggregate_conviction_weights(self):
         """Aggregate effective weights by proposal from CreditManager's conviction tracking."""
@@ -598,21 +630,21 @@ class Consensus:
         
         self.creditmgr.events.append(finalization_event)
         
-        logger.bind(event_dict={
-            "event_type": "finalization_decision",
-            "tick": tick,
-            "phase": "FINALIZE",
-            "message": finalization_event["reason"],
-            "payload": {
-                "proposal_id": winner_proposal_id,
-                "agent_id": agent_id,
-                "effective_weight": winner_data["total_effective_weight"],
-                "raw_weight": winner_data["total_raw_weight"],
-                "contributor_count": winner_data["contributor_count"],
-                "final_tick": tick,
-                "issue_id": issue_id
-            }
-        }).info(finalization_event["reason"])
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.FINALIZATION_DECISION,
+            payload={
+            "proposal_id": winner_proposal_id,
+            "agent_id": agent_id,
+            "effective_weight": winner_data["total_effective_weight"],
+            "raw_weight": winner_data["total_raw_weight"],
+            "contributor_count": winner_data["contributor_count"],
+            "final_tick": tick,
+            "issue_id": issue_id
+            },
+            message=finalization_event["reason"]
+        ))
     
     def _emit_influence_events(self, winner_proposal_id, issue_id, tick):
         """Emit influence recorded events for each agent's contribution to winning proposal."""
@@ -644,20 +676,20 @@ class Consensus:
                 
                 self.creditmgr.events.append(influence_event)
                 
-                logger.bind(event_dict={
-                    "event_type": "influence_recorded",
-                    "tick": tick,
-                    "phase": "FINALIZE",
-                    "agent_id": agent_id,
-                    "message": influence_event["reason"],
-                    "payload": {
+                log_event(LogEntry(
+                    tick=tick,
+                    phase=PhaseType.FINALIZE,
+                    event_type=EventType.INFLUENCE_RECORDED,
+                    payload={
                         "winning_proposal_id": winner_proposal_id,
+                        "agent_id": agent_id,
                         "contribution": effective_contribution,
                         "raw_stake": total_stake,
                         "multiplier": multiplier,
                         "issue_id": issue_id
-                    }
-                }).info(influence_event["reason"])
+                    },
+                    message=influence_event["reason"]
+                ))
     
     def _emit_no_winner_event(self, issue_id, tick):
         """Emit event when no winner can be determined."""
@@ -676,19 +708,19 @@ class Consensus:
         
         self.creditmgr.events.append(no_winner_event)
         
-        logger.bind(event_dict={
-            "event_type": "finalization_decision",
-            "tick": tick,
-            "phase": "FINALIZE",
-            "message": no_winner_event["reason"],
-            "payload": {
-                "proposal_id": None,
-                "agent_id": "system",
-                "effective_weight": 0,
-                "raw_weight": 0,
-                "final_tick": tick
-            }
-        }).warning(no_winner_event["reason"])
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.FINALIZATION_DECISION,
+            payload={
+            "proposal_id": None,
+            "agent_id": "system",
+            "effective_weight": 0,
+            "raw_weight": 0,
+            "final_tick": tick
+            },
+            message=no_winner_event["reason"]
+        ))
     
     def _perform_finalization_cleanup(self, issue_id, tick):
         """Perform final cleanup tasks."""
@@ -711,12 +743,15 @@ class Consensus:
         
         self.creditmgr.events.append(finalized_event)
         
-        logger.bind(event_dict={
-            "event_type": "issue_finalized",
-            "tick": tick,
-            "phase": "FINALIZE",
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.ISSUE_FINALIZED,
+            payload={
             "issue_id": issue_id
-        }).info(f"Issue {issue_id} finalized at tick {tick}")
+            },
+            message=f"Issue {issue_id} finalized at tick {tick}"
+        ))
 
     def _format_proposal_display(self, proposal_id, issue_id):
         """Format proposal ID for display as #ID (author, revN)."""

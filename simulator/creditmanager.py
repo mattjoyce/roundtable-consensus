@@ -1,4 +1,4 @@
-from loguru import logger
+from simlog import log_event, logger, LogEntry, EventType, LogLevel
 from collections import defaultdict
 import math
 
@@ -16,12 +16,16 @@ class CreditManager:
         self.conviction_rounds_held = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> total rounds ever held
         
         # Log credit manager initialization
-        logger.bind(event_dict={
-            "event_type": "credit_manager_init",
-            "initial_balances": initial_balances,
-            "total_agents": len(initial_balances),
-            "total_credits": sum(initial_balances.values())
-        }).debug(f"CreditManager initialized with {len(initial_balances)} agents and {sum(initial_balances.values())} total credits")
+        log_event(LogEntry(
+            event_type=EventType.CREDIT_MANAGER_INIT,
+            payload={
+                "initial_balances": initial_balances,
+                "total_agents": len(initial_balances),
+                "total_credits": sum(initial_balances.values())
+            },
+            message=f"CreditManager initialized with {len(initial_balances)} agents and {sum(initial_balances.values())} total credits",
+            level=LogLevel.DEBUG
+        ))
 
     def get_balance(self, agent_id: str) -> int:
         return self.balances.get(agent_id, 0)
@@ -40,15 +44,18 @@ class CreditManager:
             self.events.append(event_data)
             
             # Log the credit burn event
-            logger.bind(event_dict={
-                "event_type": "credit_burn",
-                "agent_id": agent_id,
-                "amount": amount,
-                "reason": reason,
-                "tick": tick,
-                "issue_id": issue_id,
-                "new_balance": self.balances[agent_id]
-            }).info(f"Credit burned: {agent_id} -{amount} CP ({reason})")
+            log_event(LogEntry(
+                tick=tick,
+                event_type=EventType.CREDIT_BURN,
+                agent_id=agent_id,
+                payload={
+                    "amount": amount,
+                    "reason": reason,
+                    "issue_id": issue_id,
+                    "new_balance": self.balances[agent_id]
+                },
+                message=f"Credit burned: {agent_id} -{amount} CP ({reason})"
+            ))
             
             return True
         else:
@@ -63,15 +70,19 @@ class CreditManager:
             self.events.append(event_data)
             
             # Log the insufficient credit event
-            logger.bind(event_dict={
-                "event_type": "insufficient_credit",
-                "agent_id": agent_id,
-                "amount": amount,
-                "reason": reason,
-                "tick": tick,
-                "issue_id": issue_id,
-                "current_balance": self.get_balance(agent_id)
-            }).warning(f"Insufficient credit: {agent_id} attempted {amount} CP but has {self.get_balance(agent_id)} CP")
+            log_event(LogEntry(
+                tick=tick,
+                event_type=EventType.INSUFFICIENT_CREDIT,
+                agent_id=agent_id,
+                payload={
+                    "amount": amount,
+                    "reason": reason,
+                    "issue_id": issue_id,
+                    "current_balance": self.get_balance(agent_id)
+                },
+                message=f"Insufficient credit: {agent_id} attempted {amount} CP but has {self.get_balance(agent_id)} CP",
+                level=LogLevel.WARNING
+            ))
             
             return False
 
@@ -90,16 +101,19 @@ class CreditManager:
         self.events.append(event_data)
         
         # Log the credit award event
-        logger.bind(event_dict={
-            "event_type": "credit_award",
-            "agent_id": agent_id,
-            "amount": amount,
-            "reason": reason,
-            "tick": tick,
-            "issue_id": issue_id,
-            "old_balance": old_balance,
-            "new_balance": self.balances[agent_id]
-        }).info(f"Credit awarded: {agent_id} +{amount} CP ({reason})")
+        log_event(LogEntry(
+            tick=tick,
+            event_type=EventType.CREDIT_AWARD,
+            agent_id=agent_id,
+            payload={
+                "amount": amount,
+                "reason": reason,
+                "issue_id": issue_id,
+                "old_balance": old_balance,
+                "new_balance": self.balances[agent_id]
+            },
+            message=f"Credit awarded: {agent_id} +{amount} CP ({reason})"
+        ))
 
     def get_all_balances(self) -> dict:
         return dict(self.balances)
@@ -121,15 +135,18 @@ class CreditManager:
             }
             self.stake_ledger.append(stake_record)
             
-            logger.bind(event_dict={
-                "event_type": "stake_recorded",
-                "agent_id": agent_id,
-                "proposal_id": proposal_id,
-                "amount": amount,
-                "tick": tick,
-                "issue_id": issue_id,
-                "stake_type": "initial"
-            }).info(f"Stake recorded: {agent_id} staked {amount} CP on {proposal_id} (Round 0, proposal_stake) - Ledger entry added")
+            log_event(LogEntry(
+                tick=tick,
+                event_type=EventType.STAKE_RECORDED,
+                agent_id=agent_id,
+                payload={
+                    "proposal_id": proposal_id,
+                    "amount": amount,
+                    "issue_id": issue_id,
+                    "stake_type": "initial"
+                },
+                message=f"Stake recorded: {agent_id} staked {amount} CP on {proposal_id} (Round 0, proposal_stake) - Ledger entry added"
+            ))
             return True
         return False
 
@@ -144,15 +161,18 @@ class CreditManager:
                 record["proposal_id"] = new_proposal_id
                 record["tick"] = tick  # Update to current tick
                 
-                logger.bind(event_dict={
-                    "event_type": "stake_transferred",
-                    "old_proposal_id": old_proposal_id,
-                    "new_proposal_id": new_proposal_id,
-                    "amount": record["amount"],
-                    "staked_by": record["staked_by"],
-                    "tick": tick,
-                    "issue_id": issue_id
-                }).info(f"Transferred stake of {record['amount']} CP from {old_proposal_id} to {new_proposal_id} (agent: {record['staked_by']})")
+                log_event(LogEntry(
+                    tick=tick,
+                    event_type=EventType.STAKE_TRANSFERRED,
+                    agent_id=record["staked_by"],
+                    payload={
+                        "old_proposal_id": old_proposal_id,
+                        "new_proposal_id": new_proposal_id,
+                        "amount": record["amount"],
+                        "issue_id": issue_id
+                    },
+                    message=f"Transferred stake of {record['amount']} CP from {old_proposal_id} to {new_proposal_id} (agent: {record['staked_by']})"
+                ))
             
             return True
         return False
@@ -233,21 +253,19 @@ class CreditManager:
         if is_switching:
             # Reset conviction on previous proposal but preserve rounds_held history
             self.conviction_rounds[agent_id][current_proposal] = 0
-            logger.bind(event_dict={
-                "event_type": "conviction_switched",
-                "agent_id": agent_id,
-                "from_proposal_id": current_proposal,
-                "to_proposal_id": proposal_id,
-                "stake_amount": stake_amount,
-                "tick": tick,
-                "issue_id": issue_id,
-                "payload": {
-                    "from_proposal": current_proposal,
-                    "to_proposal": proposal_id,
+            log_event(LogEntry(
+                tick=tick,
+                event_type=EventType.CONVICTION_SWITCHED,
+                agent_id=agent_id,
+                payload={
+                    "from_proposal_id": current_proposal,
+                    "to_proposal_id": proposal_id,
                     "stake_amount": stake_amount,
+                    "issue_id": issue_id,
                     "previous_rounds_held": self.conviction_rounds_held[agent_id][current_proposal]
-                }
-            }).info(f"Agent {agent_id} switched conviction from {current_proposal} to {proposal_id}")
+                },
+                message=f"Agent {agent_id} switched conviction from {current_proposal} to {proposal_id}"
+            ))
         
         # Update conviction tracking
         self.conviction_ledger[agent_id][proposal_id] += stake_amount
@@ -261,26 +279,22 @@ class CreditManager:
         consecutive_rounds = self.conviction_rounds[agent_id][proposal_id]
         
         # Log conviction update event with structured payload
-        logger.bind(event_dict={
-            "event_type": "conviction_updated",
-            "agent_id": agent_id,
-            "proposal_id": proposal_id,
-            "raw_stake": stake_amount,
-            "multiplier": multiplier,
-            "effective_weight": effective_weight,
-            "total_conviction": total_conviction,
-            "consecutive_rounds": consecutive_rounds,
-            "tick": tick,
-            "issue_id": issue_id,
-            "payload": {
-                "raw": stake_amount,
+        log_event(LogEntry(
+            tick=tick,
+            event_type=EventType.CONVICTION_UPDATED,
+            agent_id=agent_id,
+            payload={
+                "proposal_id": proposal_id,
+                "raw_stake": stake_amount,
                 "multiplier": multiplier,
-                "weight": effective_weight,
-                "rounds_supported": consecutive_rounds,
-                "rounds_held": self.conviction_rounds_held[agent_id][proposal_id],
-                "total_conviction": total_conviction
-            }
-        }).info(f"Conviction updated: {agent_id} → {proposal_id}: {stake_amount}CP × {multiplier} = {effective_weight} effective weight")
+                "effective_weight": effective_weight,
+                "total_conviction": total_conviction,
+                "consecutive_rounds": consecutive_rounds,
+                "issue_id": issue_id,
+                "rounds_held": self.conviction_rounds_held[agent_id][proposal_id]
+            },
+            message=f"Conviction updated: {agent_id} → {proposal_id}: {stake_amount}CP × {multiplier} = {effective_weight} effective weight"
+        ))
         
         return {
             "raw_stake": stake_amount,

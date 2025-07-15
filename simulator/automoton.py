@@ -1,5 +1,5 @@
 from models import AgentActor, Action, ACTION_QUEUE, Proposal
-from loguru import logger
+from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
 import random
 from utils import linear, sigmoid, ACTIVATIONS, generate_lorem_content
 

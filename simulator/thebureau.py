@@ -3,7 +3,7 @@ from models import ACTION_QUEUE
 from roundtable import Consensus
 from creditmanager import CreditManager
 from typing import Optional
-from loguru import logger
+from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
 
 
 class TheBureau:
@@ -97,31 +97,32 @@ class TheBureau:
                     and consensus.all_agents_ready
                     and not consensus.state.get("issue_finalized", False)
                 ):
-                    logger.bind(
-                        event_dict={
-                            "event_type": "finalization_trigger",
-                            "tick": tick,
-                            "phase": phase,
+                    log_event(LogEntry(
+                        tick=tick,
+                        phase=PhaseType(phase),
+                        event_type=EventType.FINALIZATION_TRIGGER,
+                        payload={
                             "issue_id": (
                                 self.current_issue.issue_id if self.current_issue else None
                             ),
-                        }
-                    ).info("Final STAKE round complete - triggering finalization")
+                        },
+                        message="Final STAKE round complete - triggering finalization"
+                    ))
                     consensus.finalize_issue()
 
             if consensus.is_think_tick_over():
-                logger.bind(
-                    event_dict={
-                        "event_type": "phase_timeout",
-                        "tick": tick,
-                        "phase": phase,
+                log_event(LogEntry(
+                    tick=tick,
+                    phase=PhaseType(phase),
+                    event_type=EventType.PHASE_TIMEOUT,
+                    payload={
                         "issue_id": (
                             self.current_issue.issue_id if self.current_issue else None
                         ),
-                    }
-                ).warning(
-                    f"Timeout {phase} Phase at tick {consensus.state['tick']}"
-                )
+                    },
+                    message=f"Timeout {phase} Phase at tick {consensus.state['tick']}",
+                    level=LogLevel.WARNING
+                ))
                 
                 # Handle unready agents on timeout for all phases
                 unready = self.current_consensus.get_unready_agents()
@@ -165,19 +166,18 @@ class TheBureau:
 
             # Log phase transitions
             if consensus.state["phase_tick"] == 1:
-                logger.bind(
-                    event_dict={
-                        "event_type": "phase_transition",
-                        "tick": tick,
-                        "phase": phase,
+                log_event(LogEntry(
+                    tick=tick,
+                    phase=PhaseType(phase),
+                    event_type=EventType.PHASE_TRANSITION,
+                    payload={
                         "phase_tick": consensus.state["phase_tick"],
                         "issue_id": (
                             self.current_issue.issue_id if self.current_issue else None
                         ),
-                    }
-                ).info(
-                    f"Transitioned to new phase: {consensus.get_current_phase().phase_number}"
-                )
+                    },
+                    message=f"Transitioned to new phase: {consensus.get_current_phase().phase_number}"
+                ))
                 logger.debug(f"Phase Tick: {consensus.state['phase_tick']}")
 
             # Update consensus state with current agent proposal mappings
@@ -186,13 +186,13 @@ class TheBureau:
                     self.current_issue.agent_to_proposal_id
                 )
 
-            logger.bind(
-                event_dict={
-                    "event_type": "consensus_tick",
-                    "tick": tick,
-                    "phase": phase,
-                }
-            ).debug("Ticking consensus...")
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType(phase),
+                event_type=EventType.CONSENSUS_TICK,
+                message="Ticking consensus...",
+                level=LogLevel.DEBUG
+            ))
             consensus.tick()
 
         return consensus._summarize_results()
@@ -223,91 +223,95 @@ class TheBureau:
         # Assign sequential proposal ID
         new_proposal_id = self.get_next_proposal_id()
 
-        logger.bind(
-            event_dict={
-                "event_type": "proposal_received",
-                "tick": tick,
-                "phase": phase,
-                "agent_id": agent_id,
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType(phase),
+            event_type=EventType.PROPOSAL_RECEIVED,
+            agent_id=agent_id,
+            payload={
                 "proposal_id": new_proposal_id,
                 "issue_id": proposal.issue_id,
-            }
-        ).info(
-            f"Received proposal from {agent_id}: #{new_proposal_id} for issue {proposal.issue_id}"
-        )
+            },
+            message=f"Received proposal from {agent_id}: #{new_proposal_id} for issue {proposal.issue_id}"
+        ))
 
         # Validation 1: Check if there's an active issue
         if not self.current_issue:
-            logger.bind(
-                event_dict={
-                    "event_type": "proposal_rejected",
-                    "tick": tick,
-                    "phase": phase,
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType(phase),
+                event_type=EventType.PROPOSAL_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "no_active_issue",
-                }
-            ).warning(f"Rejected proposal from {agent_id}: No active issue")
+                },
+                message=f"Rejected proposal from {agent_id}: No active issue",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 2: Check if agent is assigned to the issue
         if not self.current_issue.is_assigned(agent_id):
-            logger.bind(
-                event_dict={
-                    "event_type": "proposal_rejected",
-                    "tick": tick,
-                    "phase": phase,
-                    "agent_id": agent_id,
+            
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType(phase),
+                event_type=EventType.PROPOSAL_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "not_assigned",
                     "issue_id": issue_id,
-                }
-            ).warning(
-                f"Rejected proposal from {agent_id}: Not assigned to issue {issue_id}"
-            )
+                },
+                message=f"Rejected proposal from {agent_id}: Not assigned to issue {issue_id}",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 3: Check if agent already submitted in current PROPOSE phase
         if agent_id in self.proposals_this_phase:
-            logger.bind(
-                event_dict={
-                    "event_type": "proposal_rejected",
-                    "tick": tick,
-                    "phase": phase,
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType(phase),
+                event_type=EventType.PROPOSAL_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "already_submitted",
-                }
-            ).warning(
-                f"Rejected proposal from {agent_id}: Already submitted in current PROPOSE phase"
-            )
+                },
+                message=f"Rejected proposal from {agent_id}: Already submitted in current PROPOSE phase",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 4: Check if proposal is for current issue
         if proposal.issue_id != self.current_issue.issue_id:
-            logger.bind(
-                event_dict={
-                    "event_type": "proposal_rejected",
-                    "tick": tick,
-                    "phase": phase,
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType(phase),
+                event_type=EventType.PROPOSAL_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "wrong_issue_id",
                     "received_issue_id": proposal.issue_id,
                     "expected_issue_id": issue_id,
-                }
-            ).warning(
-                f"Rejected proposal from {agent_id}: Wrong issue ID (got {proposal.issue_id}, expected {issue_id})"
-            )
+                },
+                message=f"Rejected proposal from {agent_id}: Wrong issue ID (got {proposal.issue_id}, expected {issue_id})",
+                level=LogLevel.WARNING
+            ))
             return
 
         # check the agent has enough CP to stake
         if not self.creditmgr.get_balance(agent_id) >= self.current_consensus.gc.proposal_self_stake:
-            logger.bind(
-                event_dict={
-                    "event_type": "proposal_rejected",
-                    "tick": tick,
-                    "phase": phase,
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType(phase),
+                event_type=EventType.PROPOSAL_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "insufficient_cp_for_stake",
-                }
-            ).warning(f"Rejected proposal from {agent_id}: Not enough CP to stake")
+                },
+                message=f"Rejected proposal from {agent_id}: Not enough CP to stake",
+                level=LogLevel.WARNING
+            ))
             return
 
         # If all validations pass, proceed with proposal acceptance
@@ -341,18 +345,17 @@ class TheBureau:
         self.signal_ready(agent_id,payload={"reason": "proposal_accepted"})
         self.proposals_this_phase.add(agent_id)
 
-        logger.bind(
-            event_dict={
-                "event_type": "proposal_accepted",
-                "tick": tick,
-                "phase": phase,
-                "agent_id": agent_id,
-                "proposal_id": proposal.proposal_id,
-                "issue_id": issue_id,
-            }
-        ).info(
-            f"Proposal accepted from {agent_id}: #{proposal.proposal_id} for issue {issue_id} at tick {tick}"
-        )
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType(phase),
+            event_type=EventType.PROPOSAL_ACCEPTED,
+            agent_id=agent_id,
+            payload={
+            "proposal_id": proposal.proposal_id,
+            "issue_id": issue_id,
+            },
+            message=f"Proposal accepted from {agent_id}: #{proposal.proposal_id} for issue {issue_id} at tick {tick}"
+        ))
 
     def create_no_action_proposal(
         self, tick: int, agent_id: str, issue_id: str
@@ -371,23 +374,22 @@ class TheBureau:
         return proposal
 
     def signal_ready(self, agent_id: str, payload: Optional[dict] = None):
-        logger.bind(
-            event_dict={
-                "event_type": "agent_ready",
-                "agent_id": agent_id,
-                "tick": (
-                    self.current_consensus.state["tick"]
-                    if self.current_consensus
-                    else 0
-                ),
-                "phase": (
-                    self.current_consensus.state["current_phase"]
-                    if self.current_consensus
-                    else None
-                ),
-                "payload": payload or {},
-            }
-        ).debug(f"Agent {agent_id} marked as Ready")
+        log_event(LogEntry(
+            tick=(
+            self.current_consensus.state["tick"]
+            if self.current_consensus
+            else 0
+            ),
+            phase=(
+            self.current_consensus.state["current_phase"]
+            if self.current_consensus
+            else None
+            ),
+            event_type=EventType.AGENT_READY,
+            agent_id=agent_id,
+            payload=payload or {},
+            message=f"Agent {agent_id} marked as Ready"
+        ))
         self.current_consensus.set_agent_ready(agent_id)
 
     def receive_feedback(self, agent_id: str, payload: dict):
@@ -433,15 +435,17 @@ class TheBureau:
 
         # check agenyt has enough CP to stake
         if not self.creditmgr.get_balance(agent_id) >= self.current_consensus.gc.feedback_stake:
-            logger.bind(
-                event_dict={
-                    "event_type": "feedback_rejected",
-                    "tick": tick,
-                    "phase": phase,
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType(phase),
+                event_type=EventType.FEEDBACK_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "insufficient_cp_for_stake",
-                }
-            ).warning(f"Rejected feedback from {agent_id}: Not enough CP to stake")
+                },
+                message=f"Rejected feedback from {agent_id}: Not enough CP to stake",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Deduct stake
@@ -473,90 +477,97 @@ class TheBureau:
             else None
         )
 
-        logger.bind(
-            event_dict={
-                "event_type": "revision_received",
-                "tick": tick,
-                "phase": (
+        log_event(LogEntry(
+            tick=tick,
+            phase=(
+            self.current_consensus.state["current_phase"]
+            if self.current_consensus
+            else None
+            ),
+            event_type=EventType.REVISION_RECEIVED,
+            agent_id=agent_id,
+            payload={
+            "proposal_id": proposal_id,
+            "delta": delta,
+            "issue_id": issue_id,
+            },
+            message=f"Received revision from {agent_id}: #{proposal_id} (Δ={delta})"
+        ))
+
+        # Validation 1: Check if agent has a proposal to revise
+        if not proposal_id:
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
                     self.current_consensus.state["current_phase"]
                     if self.current_consensus
                     else None
                 ),
-                "agent_id": agent_id,
-                "proposal_id": proposal_id,
-                "delta": delta,
-                "issue_id": issue_id,
-            }
-        ).info(f"Received revision from {agent_id}: #{proposal_id} (Δ={delta})")
-
-        # Validation 1: Check if agent has a proposal to revise
-        if not proposal_id:
-            logger.bind(
-                event_dict={
-                    "event_type": "revision_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+                event_type=EventType.REVISION_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "no_proposal_to_revise",
-                }
-            ).warning(
-                f"Rejected revision from {agent_id}: Agent has no proposal to revise"
-            )
+                },
+                message=f"Rejected revision from {agent_id}: Agent has no proposal to revise",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 2: Check if there's an active issue
         if not self.current_issue or self.current_issue.issue_id != issue_id:
-            logger.bind(
-                event_dict={
-                    "event_type": "revision_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.REVISION_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "wrong_issue",
-                }
-            ).warning(f"Rejected revision from {agent_id}: Wrong or missing issue")
+                },
+                message=f"Rejected revision from {agent_id}: Wrong or missing issue",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 2: Check if agent is assigned to the issue
         if not self.current_issue.is_assigned(agent_id):
-            logger.bind(
-                event_dict={
-                    "event_type": "revision_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.REVISION_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "not_assigned",
-                }
-            ).warning(f"Rejected revision from {agent_id}: Not assigned to issue")
+                },
+                message=f"Rejected revision from {agent_id}: Not assigned to issue",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 3: Check revision delta and new content are present
         if not new_content or delta is None or delta < 0.1 or delta > 1.0:
-            logger.bind(
-                event_dict={
-                    "event_type": "revision_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.REVISION_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "invalid_revision_data",
-                }
-            ).warning(f"Rejected revision from {agent_id}: Invalid revision data")
+                },
+                message=f"Rejected revision from {agent_id}: Invalid revision data",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Calculate CP cost: cost = proposal_self_stake * delta
@@ -572,22 +583,22 @@ class TheBureau:
         )
 
         if not deduct_success:
-            logger.bind(
-                event_dict={
-                    "event_type": "revision_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.REVISION_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "insufficient_cp",
                     "cost": cost,
-                }
-            ).warning(
-                f"Rejected revision from {agent_id}: Insufficient CP for cost {cost}"
-            )
+                },
+                message=f"Rejected revision from {agent_id}: Insufficient CP for cost {cost}",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Find the current active proposal to revise
@@ -598,43 +609,43 @@ class TheBureau:
                 break
 
         if not old_proposal:
-            logger.bind(
-                event_dict={
-                    "event_type": "revision_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.REVISION_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "active_proposal_not_found",
-                }
-            ).warning(
-                f"Rejected revision from {agent_id}: Active proposal #{proposal_id} not found"
-            )
+                },
+                message=f"Rejected revision from {agent_id}: Active proposal #{proposal_id} not found",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation: Check if agent is the author of the proposal
         if old_proposal.author != agent_id:
-            logger.bind(
-                event_dict={
-                    "event_type": "revision_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.REVISION_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "not_proposal_author",
                     "proposal_id": proposal_id,
                     "actual_author": old_proposal.author,
                     "author_type": old_proposal.author_type,
-                }
-            ).warning(
-                f"Rejected revision from {agent_id}: Not author of proposal #{proposal_id} (author: {old_proposal.author}, type: {old_proposal.author_type})"
-            )
+                },
+                message=f"Rejected revision from {agent_id}: Not author of proposal #{proposal_id} (author: {old_proposal.author}, type: {old_proposal.author_type})",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Get next proposal ID for the revision
@@ -686,21 +697,23 @@ class TheBureau:
         )
 
         if not stake_transferred:
-            logger.bind(
-                event_dict={
-                    "event_type": "revision_warning",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.REVISION_WARNING,
+                agent_id=agent_id,
+                payload={
                     "reason": "no_stake_to_transfer",
-                }
-            ).warning(
-                f"No stake found to transfer from #{proposal_id} to #{new_proposal_id}"
-            )
+                    "proposal_id": proposal_id,
+                    "new_proposal_id": new_proposal_id,
+                },
+                message=f"No stake found to transfer from #{proposal_id} to #{new_proposal_id}",
+                level=LogLevel.WARNING
+            ))
 
         # Log a Revision event to the ledger with version lineage
         revision_event = {
@@ -721,26 +734,25 @@ class TheBureau:
         # Mark agent as ready
         self.signal_ready(agent_id, payload={"reason": "revision_accepted"})
 
-        logger.bind(
-            event_dict={
-                "event_type": "revision_accepted",
-                "tick": tick,
-                "phase": (
-                    self.current_consensus.state["current_phase"]
-                    if self.current_consensus
-                    else None
-                ),
-                "agent_id": agent_id,
-                "parent_id": proposal_id,
-                "new_proposal_id": new_proposal_id,
-                "delta": delta,
-                "cost": cost,
-                "revision_number": new_revision_number,
-                "issue_id": issue_id,
-            }
-        ).info(
-            f"Revision accepted from {agent_id}: #{proposal_id} → #{new_proposal_id} (Δ={delta}, cost={cost}CP, rev{new_revision_number})"
-        )
+        log_event(LogEntry(
+            tick=tick,
+            phase=(
+            self.current_consensus.state["current_phase"]
+            if self.current_consensus
+            else None
+            ),
+            event_type=EventType.REVISION_ACCEPTED,
+            agent_id=agent_id,
+            payload={
+            "parent_id": proposal_id,
+            "new_proposal_id": new_proposal_id,
+            "delta": delta,
+            "cost": cost,
+            "revision_number": new_revision_number,
+            "issue_id": issue_id,
+            },
+            message=f"Revision accepted from {agent_id}: #{proposal_id} → #{new_proposal_id} (Δ={delta}, cost={cost}CP, rev{new_revision_number})"
+        ))
 
     def receive_stake(self, agent_id: str, payload: dict):
         """Process a stake action from an agent - deduct CP and record stake with conviction tracking."""
@@ -751,93 +763,98 @@ class TheBureau:
         issue_id = payload.get("issue_id")
         choice_reason = payload.get("choice_reason", "unknown")
 
-        logger.bind(
-            event_dict={
-                "event_type": "stake_received",
-                "tick": tick,
-                "phase": (
+        log_event(LogEntry(
+            tick=tick,
+            phase=(
+            self.current_consensus.state["current_phase"]
+            if self.current_consensus
+            else None
+            ),
+            event_type=EventType.STAKE_RECEIVED,
+            agent_id=agent_id,
+            payload={
+            "proposal_id": proposal_id,
+            "stake_amount": stake_amount,
+            "round_number": round_number,
+            "issue_id": issue_id,
+            },
+            message=f"Received stake from {agent_id}: {stake_amount} CP → {proposal_id} (Round {round_number})"
+        ))
+
+        # Validation 1: Check if there's an active issue
+        if not self.current_issue or self.current_issue.issue_id != issue_id:
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
                     self.current_consensus.state["current_phase"]
                     if self.current_consensus
                     else None
                 ),
-                "agent_id": agent_id,
-                "proposal_id": proposal_id,
-                "stake_amount": stake_amount,
-                "round_number": round_number,
-                "issue_id": issue_id,
-            }
-        ).info(
-            f"Received stake from {agent_id}: {stake_amount} CP → {proposal_id} (Round {round_number})"
-        )
-
-        # Validation 1: Check if there's an active issue
-        if not self.current_issue or self.current_issue.issue_id != issue_id:
-            logger.bind(
-                event_dict={
-                    "event_type": "stake_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+                event_type=EventType.STAKE_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "wrong_issue",
-                }
-            ).warning(f"Rejected stake from {agent_id}: Wrong or missing issue")
+                },
+                message=f"Rejected stake from {agent_id}: Wrong or missing issue",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 2: Check if agent is assigned to the issue
         if not self.current_issue.is_assigned(agent_id):
-            logger.bind(
-                event_dict={
-                    "event_type": "stake_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.STAKE_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "not_assigned",
-                }
-            ).warning(f"Rejected stake from {agent_id}: Not assigned to issue")
+                },
+                message=f"Rejected stake from {agent_id}: Not assigned to issue",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 3: Check stake amount is positive
         if not stake_amount or stake_amount <= 0:
-            logger.bind(
-                event_dict={
-                    "event_type": "stake_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.STAKE_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "invalid_amount",
-                }
-            ).warning(
-                f"Rejected stake from {agent_id}: Invalid stake amount {stake_amount}"
-            )
+                },
+                message=f"Rejected stake from {agent_id}: Invalid stake amount {stake_amount}",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 4: Check proposal_id is provided
         if not proposal_id:
-            logger.bind(
-                event_dict={
-                    "event_type": "stake_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.STAKE_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "missing_proposal_id",
-                }
-            ).warning(f"Rejected stake from {agent_id}: Missing proposal ID")
+                },
+                message=f"Rejected stake from {agent_id}: Missing proposal ID",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Validation 5: Check if agent is self-staking on their latest proposal
@@ -849,23 +866,23 @@ class TheBureau:
             and selected_agent
             and selected_agent.latest_proposal_id != proposal_id
         ):
-            logger.bind(
-                event_dict={
-                    "event_type": "stake_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.STAKE_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "not_latest_proposal",
                     "proposal_id": proposal_id,
                     "latest_proposal_id": selected_agent.latest_proposal_id,
-                }
-            ).warning(
-                f"Rejected stake from {agent_id}: Can only self-stake on latest proposal (staking on #{proposal_id}, latest is #{selected_agent.latest_proposal_id})"
-            )
+                },
+                message=f"Rejected stake from {agent_id}: Can only self-stake on latest proposal (staking on #{proposal_id}, latest is #{selected_agent.latest_proposal_id})",
+                level=LogLevel.WARNING
+            ))
             return
 
         # Attempt to deduct CP
@@ -894,16 +911,16 @@ class TheBureau:
             )
 
             # Emit comprehensive stake_recorded event with conviction details
-            logger.bind(
-                event_dict={
-                    "event_type": "stake_recorded",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.STAKE_RECORDED,
+                agent_id=agent_id,
+                payload={
                     "proposal_id": proposal_id,
                     "stake_amount": stake_amount,
                     "round_number": round_number,
@@ -914,30 +931,36 @@ class TheBureau:
                     "consecutive_rounds": conviction_details["consecutive_rounds"],
                     "switched_from": conviction_details["switched_from"],
                     "issue_id": issue_id,
-                }
-            ).info(
-                f"Stake recorded: {agent_id} staked {stake_amount} CP on {proposal_id} (Round {round_number}, {choice_reason}) - Effective weight: {conviction_details['effective_weight']} (×{conviction_details['multiplier']})"
-            )
+                },
+                message=(
+                    f"Stake recorded: {agent_id} staked {stake_amount} CP on {proposal_id} "
+                    f"(Round {round_number}, {choice_reason}) - Effective weight: "
+                    f"{conviction_details['effective_weight']} (×{conviction_details['multiplier']})"
+                )
+            ))
 
         else:
             # Emit insufficient_credit event (already handled by attempt_deduct)
-            logger.bind(
-                event_dict={
-                    "event_type": "stake_rejected",
-                    "tick": tick,
-                    "phase": (
-                        self.current_consensus.state["current_phase"]
-                        if self.current_consensus
-                        else None
-                    ),
-                    "agent_id": agent_id,
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.current_consensus.state["current_phase"]
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.STAKE_REJECTED,
+                agent_id=agent_id,
+                payload={
                     "reason": "insufficient_credit",
                     "stake_amount": stake_amount,
                     "current_balance": self.creditmgr.get_balance(agent_id),
-                }
-            ).warning(
-                f"Rejected stake from {agent_id}: Insufficient CP (has {self.creditmgr.get_balance(agent_id)}, needs {stake_amount})"
-            )
+                },
+                message=(
+                    f"Rejected stake from {agent_id}: Insufficient CP "
+                    f"(has {self.creditmgr.get_balance(agent_id)}, needs {stake_amount})"
+                ),
+                level=LogLevel.WARNING
+            ))
 
         # Mark agent as ready (regardless of success/failure)
         self.signal_ready(agent_id,payload={"reason": "stake_received"})

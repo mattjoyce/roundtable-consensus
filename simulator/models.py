@@ -2,7 +2,7 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Optional, Literal, Any
 import random
-from loguru import logger
+from simlog import log_event, logger, LogEntry, EventType, LogLevel
 
 class Proposal(BaseModel):
     tick: int

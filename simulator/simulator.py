@@ -8,7 +8,7 @@ from primer import Primer
 from thebureau import TheBureau
 from simlog import setup_logging, generate_sim_id
 from config import get_config_with_args
-from loguru import logger
+from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
 
 def parse_arguments():
     """Parse command line arguments."""
@@ -97,16 +97,21 @@ def main():
         
         # Log simulation parameters
         logger.info("Starting Round Table Consensus Simulation")
-        logger.bind(event_dict={
-            "event_type": "simulation_start",
-            "sim_id": sim_id,
-            "pool_seed": pool_seed,
-            "run_seed": run_seed,
-            "max_scenarios": max_scenarios,
-            "num_agents": num_agents,
-            "verbosity": args.verbose,
-            "config_file": args.config
-        }).info("Simulation parameters configured")
+        log_event(LogEntry(
+            tick=0,
+            phase=PhaseType.INIT,
+            event_type=EventType.SIMULATION_START,
+            payload={
+                "sim_id": sim_id,
+                "pool_seed": pool_seed,
+                "run_seed": run_seed,
+                "max_scenarios": max_scenarios,
+                "num_agents": num_agents,
+                "verbosity": args.verbose,
+                "config_file": args.config
+            },
+            message="Simulation parameters configured"
+        ))
         
         # Generate agent pool with configurable settings
         logger.info(f"Using pool seed: {pool_seed}, run seed: {run_seed}")
@@ -161,12 +166,17 @@ def main():
                 # Show minimal progress in quiet mode
                 print(f"Running scenario {i + 1}/{max_scenarios}...", end=" ", flush=True)
             
-            logger.bind(event_dict={
-                "event_type": "scenario_start",
-                "scenario": i + 1,
-                "total_scenarios": max_scenarios,
-                "scenario_seed": scenario_seed
-            }).info(f"Starting scenario {i + 1}")
+            log_event(LogEntry(
+                tick=0,
+                phase=PhaseType.INIT,
+                event_type=EventType.SCENARIO_START,
+                payload={
+                    "scenario": i + 1,
+                    "total_scenarios": max_scenarios,
+                    "scenario_seed": scenario_seed
+                },
+                message=f"Starting scenario {i + 1}"
+            ))
             
             gc = GlobalConfig(
                 assignment_award=config['consensus']['assignment_award'],
@@ -222,14 +232,19 @@ def main():
             else:
                 print(f"✓ ({round_duration:.2f}s)")
             
-            logger.bind(event_dict={
-                "event_type": "scenario_complete",
-                "scenario": i + 1,
-                "issue_id": issue.issue_id,
-                "phases_executed": len(result["phases_executed"]),
-                "final_tick": result.get("final_state", {}).get("tick", 0),
-                "round_duration_ms": round(round_duration * 1000, 2)
-            }).info(f"Scenario {i + 1} completed in {round_duration:.3f}s")
+            log_event(LogEntry(
+                tick=0,
+                phase=PhaseType.INIT,
+                event_type=EventType.SCENARIO_COMPLETE,
+                payload={
+                    "scenario": i + 1,
+                    "issue_id": issue.issue_id,
+                    "phases_executed": len(result["phases_executed"]),
+                    "final_tick": result.get("final_state", {}).get("tick", 0),
+                    "round_duration_ms": round(round_duration * 1000, 2)
+                },
+                message=f"Scenario {i + 1} completed in {round_duration:.3f}s"
+            ))
         
         # Calculate timing statistics
         if round_durations:
@@ -245,15 +260,20 @@ def main():
                 logger.info(f"Slowest round: {max_duration:.3f}s")
                 logger.info(f"Average duration: {avg_duration:.3f}s")
             
-            logger.bind(event_dict={
-                "event_type": "timing_stats",
-                "sim_id": sim_id,
-                "total_rounds": len(round_durations),
-                "min_duration_ms": round(min_duration * 1000, 2),
-                "max_duration_ms": round(max_duration * 1000, 2),
-                "avg_duration_ms": round(avg_duration * 1000, 2),
-                "all_durations_ms": [round(d * 1000, 2) for d in round_durations]
-            }).info("Timing statistics calculated")
+            log_event(LogEntry(
+                tick=0,
+                phase=PhaseType.INIT,
+                event_type=EventType.TIMING_STATS,
+                payload={
+                    "sim_id": sim_id,
+                    "total_rounds": len(round_durations),
+                    "min_duration_ms": round(min_duration * 1000, 2),
+                    "max_duration_ms": round(max_duration * 1000, 2),
+                    "avg_duration_ms": round(avg_duration * 1000, 2),
+                    "all_durations_ms": [round(d * 1000, 2) for d in round_durations]
+                },
+                message="Timing statistics calculated"
+            ))
         
         # Always show simulation summary (even in quiet mode)
         if args.quiet:
@@ -279,18 +299,29 @@ def main():
                 logger.info(f"Total Runtime: {total_time:.3f}s")
                 logger.info(f"Performance: {min_duration:.3f}s / {avg_duration:.3f}s / {max_duration:.3f}s (min/avg/max)")
         
-        logger.bind(event_dict={
-            "event_type": "simulation_complete",
-            "sim_id": sim_id,
-            "scenarios_completed": max_scenarios
-        }).info("Simulation completed successfully")
+        log_event(LogEntry(
+            tick=0,
+            phase=PhaseType.INIT,
+            event_type=EventType.SIMULATION_COMPLETE,
+            payload={
+                "sim_id": sim_id,
+                "scenarios_completed": max_scenarios
+            },
+            message="Simulation completed successfully"
+        ))
         
     except Exception as e:
-        logger.bind(event_dict={
-            "event_type": "simulation_error",
-            "sim_id": sim_id,
-            "error": str(e)
-        }).error(f"Simulation failed: {e}")
+        log_event(LogEntry(
+            tick=0,
+            phase=PhaseType.INIT,
+            event_type=EventType.SIMULATION_ERROR,
+            payload={
+                "sim_id": sim_id,
+                "error": str(e)
+            },
+            message=f"Simulation failed: {e}",
+            level=LogLevel.ERROR
+        ))
         raise
     finally:
         # Clean shutdown of logging

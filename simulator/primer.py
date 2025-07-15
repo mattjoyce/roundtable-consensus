@@ -1,7 +1,7 @@
 
 from models import GlobalConfig, RunConfig, AgentActor
 import random
-from loguru import logger
+from simlog import log_event, logger, LogEntry, EventType, LogLevel
 from utils import generate_lorem_content
 
 class Primer:
