@@ -141,13 +141,13 @@ def handle_propose(agent: AgentActor, payload: dict):
         content = generate_lorem_content(rng, proposal_word_count)
         
         proposal = Proposal(
-            proposal_id=f"P{agent.agent_id}",
+            proposal_id=0,  # Placeholder - will be assigned by bureau
             content=content,
             agent_id=agent.agent_id,
             issue_id=issue_id,
             tick=tick,
             metadata={"origin": "trait:initiative"},
-            author_id=agent.agent_id,
+            author=agent.agent_id,
             author_type="agent"
         )
         ACTION_QUEUE.submit(Action(

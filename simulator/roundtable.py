@@ -560,10 +560,18 @@ class Consensus:
     
     def _emit_finalization_decision(self, winner_proposal_id, winner_data, issue_id, tick):
         """Emit the finalization decision event."""
-        # Extract agent_id from proposal_id (assuming format like PAgent_3 or P{agent_id})
+        # Look up the proposal to get the author
         agent_id = "unknown"
-        if winner_proposal_id.startswith("P"):
-            agent_id = winner_proposal_id[1:].split("@")[0]  # Handle versioned proposals
+        if winner_proposal_id == 0:
+            agent_id = "system"  # NoAction proposal
+        else:
+            # Find the proposal by ID to get the author
+            bureau = self.state.get("bureau")
+            if bureau and bureau.current_issue:
+                for proposal in bureau.current_issue.proposals:
+                    if proposal.proposal_id == winner_proposal_id:
+                        agent_id = proposal.author
+                        break
         
         finalization_event = {
             "type": "finalization_decision",

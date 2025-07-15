@@ -232,7 +232,7 @@ class TheBureau:
         self.current_issue.assign_agent_to_proposal(agent_id, proposal.proposal_id)
         
         # Update agent's latest_proposal_id
-        selected_agent = self.current_consensus.run_config.selected_agents.get(agent_id)
+        selected_agent = self.current_consensus.rc.selected_agents.get(agent_id)
         if selected_agent:
             selected_agent.latest_proposal_id = new_proposal_id
         
@@ -463,7 +463,7 @@ class TheBureau:
         self.current_issue.agent_to_proposal_id[agent_id] = new_proposal_id
         
         # Update agent's latest_proposal_id
-        selected_agent = self.current_consensus.run_config.selected_agents.get(agent_id)
+        selected_agent = self.current_consensus.rc.selected_agents.get(agent_id)
         if selected_agent:
             selected_agent.latest_proposal_id = new_proposal_id
         
@@ -569,7 +569,7 @@ class TheBureau:
         
         # Validation 5: Check if agent is self-staking on their latest proposal
         agent_current_proposal = self.current_issue.agent_to_proposal_id.get(agent_id)
-        selected_agent = self.current_consensus.run_config.selected_agents.get(agent_id)
+        selected_agent = self.current_consensus.rc.selected_agents.get(agent_id)
         
         if agent_current_proposal == proposal_id and selected_agent and selected_agent.latest_proposal_id != proposal_id:
             logger.bind(event_dict={
