@@ -244,9 +244,14 @@ def handle_feedback(agent: AgentActor, payload: dict):
         num_feedbacks = max(1, min(scaled, max_this_round))
         logger.info(f"[FEEDBACK] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → PROVIDING {num_feedbacks} FEEDBACK(S) (social_factor={social_factor:.2f})")
 
-    # Sample target proposal IDs (fake for now - excluding own)
-    possible_targets = [f"PAgent_{i}" for i in range(10) if f"Agent_{i}" != own_id]
-    targets = rng.sample(possible_targets, min(num_feedbacks, len(possible_targets)))
+    # Sample target proposal IDs from actual proposals in the system
+    # Get all available proposals from the agent-to-proposal mapping
+    all_proposals = payload.get("all_proposals", [])  # Should be passed from consensus system
+    own_proposal_id = payload.get("current_proposal_id")
+    
+    # Filter out own proposal for feedback targets
+    possible_targets = [pid for pid in all_proposals if pid != own_proposal_id]
+    targets = rng.sample(possible_targets, min(num_feedbacks, len(possible_targets))) if possible_targets else []
     
     # Submit feedback actions
     for pid in targets:
@@ -534,7 +539,8 @@ def handle_stake(agent: AgentActor, payload: dict):
         
         if stake_on_others:
             # Sample from other agents' proposals
-            possible_proposals = [f"PAgent_{i}" for i in range(10) if f"Agent_{i}" != agent.agent_id]
+            all_proposals = payload.get("all_proposals", [])  # Should be passed from consensus system
+            possible_proposals = [pid for pid in all_proposals if pid != own_proposal_id]
             target_proposal_id = rng.choice(possible_proposals) if possible_proposals else own_proposal_id
             proposal_choice_reason = "sampled_other"
             logger.info(f"[STAKE] {agent.agent_id} proposal choice: others ({score2:.2f} vs {roll2:.2f}) | Weights: soc=0.5, adapt=0.3, pers=0.2")

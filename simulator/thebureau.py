@@ -15,9 +15,16 @@ class TheBureau:
         self.current_issue: Optional[Issue] = None
         self.proposals_this_phase: set = set()  # Track proposals submitted in current PROPOSE phase
         self.assigned_agents: set = set()  # Track agents assigned to the current issue
+        self.proposal_counter = 1  # Global proposal counter, starts at 1 (0 reserved for NoAction)
 
     def register_issue(self, issue: Issue):
         self.current_issue = issue
+
+    def get_next_proposal_id(self) -> int:
+        """Get the next sequential proposal ID and increment counter."""
+        next_id = self.proposal_counter
+        self.proposal_counter += 1
+        return next_id
 
     def get_issue(self, issue_id: str) -> Issue:
         if self.current_issue and self.current_issue.issue_id == issue_id:
@@ -46,6 +53,7 @@ class TheBureau:
         consensus = Consensus(global_config=global_config, run_config=run_config,creditmgr=self.creditmgr)
         consensus.state["creditmgr"] = self.creditmgr
         consensus.state["config"] = global_config  # Pass full config for signal context
+        consensus.state["bureau"] = self  # Store bureau reference for proposal lookups
         self.current_consensus = consensus
         
         # Reset ready tracking for new consensus
@@ -159,12 +167,15 @@ class TheBureau:
 
 
     def receive_proposal(self, agent_id: str, proposal: Proposal):
+        # Assign sequential proposal ID
+        new_proposal_id = self.get_next_proposal_id()
+        
         logger.bind(event_dict={
             "event_type": "proposal_received",
             "agent_id": agent_id,
-            "proposal_id": proposal.proposal_id,
+            "proposal_id": new_proposal_id,
             "issue_id": proposal.issue_id
-        }).info(f"Received proposal from {agent_id}: {proposal.proposal_id} for issue {proposal.issue_id}")
+        }).info(f"Received proposal from {agent_id}: #{new_proposal_id} for issue {proposal.issue_id}")
         
         # Validation 1: Check if there's an active issue
         if not self.current_issue:
@@ -208,11 +219,22 @@ class TheBureau:
         issue_id = self.current_issue.issue_id
         tick = self.current_consensus.state["tick"]
 
-        #update proposal with issue ID and tick
+        # Update proposal with new ID system
+        proposal.proposal_id = new_proposal_id
         proposal.tick = tick
+        proposal.author = agent_id
+        proposal.author_type = "agent"
+        proposal.type = "standard"
+        proposal.revision_number = 1
+        
         # Store proposal in Issue 
         self.current_issue.add_proposal(proposal)
         self.current_issue.assign_agent_to_proposal(agent_id, proposal.proposal_id)
+        
+        # Update agent's latest_proposal_id
+        selected_agent = self.current_consensus.run_config.selected_agents.get(agent_id)
+        if selected_agent:
+            selected_agent.latest_proposal_id = new_proposal_id
         
         # Stake CP to proposal
         stake_success = self.creditmgr.stake_to_proposal(
@@ -241,17 +263,19 @@ class TheBureau:
             "proposal_id": proposal.proposal_id,
             "issue_id": issue_id,
             "tick": tick
-        }).info(f"Proposal accepted from {agent_id}: {proposal.proposal_id} for issue {issue_id} at tick {tick}")
+        }).info(f"Proposal accepted from {agent_id}: #{proposal.proposal_id} for issue {issue_id} at tick {tick}")
 
     def create_no_action_proposal(self, tick: int, agent_id: str, issue_id: str) -> Proposal:
         proposal = Proposal(
-            proposal_id=f"PNOACTION",  
+            proposal_id=0,  # NoAction always uses ID 0
             content="Take no Action",
             agent_id=agent_id,  # Agent assigned to this proposal (backer)
             issue_id=issue_id,
             tick=tick,
-            author_id="system",  # System is the author
-            author_type="system"  # Mark as system-authored
+            author="system",  # System is the author
+            author_type="system",  # Mark as system-authored
+            type="noaction",  # Mark as NoAction type
+            revision_number=1
         )
         return proposal
     
@@ -317,7 +341,7 @@ class TheBureau:
             "proposal_id": proposal_id,
             "delta": delta,
             "issue_id": issue_id
-        }).info(f"Received revision from {agent_id}: {proposal_id} (Δ={delta})")
+        }).info(f"Received revision from {agent_id}: #{proposal_id} (Δ={delta})")
         
         # Validation 1: Check if agent has a proposal to revise
         if not proposal_id:
@@ -389,31 +413,24 @@ class TheBureau:
                 "event_type": "revision_rejected",
                 "agent_id": agent_id,
                 "reason": "active_proposal_not_found"
-            }).warning(f"Rejected revision from {agent_id}: Active proposal {proposal_id} not found")
+            }).warning(f"Rejected revision from {agent_id}: Active proposal #{proposal_id} not found")
             return
         
         # Validation: Check if agent is the author of the proposal
-        if old_proposal.author_id != agent_id:
+        if old_proposal.author != agent_id:
             logger.bind(event_dict={
                 "event_type": "revision_rejected",
                 "agent_id": agent_id,
                 "reason": "not_proposal_author",
                 "proposal_id": proposal_id,
-                "actual_author": old_proposal.author_id,
+                "actual_author": old_proposal.author,
                 "author_type": old_proposal.author_type
-            }).warning(f"Rejected revision from {agent_id}: Not author of proposal {proposal_id} (author: {old_proposal.author_id}, type: {old_proposal.author_type})")
+            }).warning(f"Rejected revision from {agent_id}: Not author of proposal #{proposal_id} (author: {old_proposal.author}, type: {old_proposal.author_type})")
             return
         
-        # Create versioned proposal - extract base ID to avoid nested versions
-        new_version = old_proposal.version + 1
-        
-        # Extract base proposal ID (remove any existing @vN suffix)
-        if "@v" in proposal_id:
-            base_proposal_id = proposal_id.split("@v")[0]
-        else:
-            base_proposal_id = proposal_id
-            
-        new_proposal_id = f"{base_proposal_id}@v{new_version}"
+        # Get next proposal ID for the revision
+        new_proposal_id = self.get_next_proposal_id()
+        new_revision_number = old_proposal.revision_number + 1
         
         # Mark old proposal as inactive
         old_proposal.active = False
@@ -427,15 +444,16 @@ class TheBureau:
             issue_id=issue_id,
             tick=tick,
             metadata={
-                "RevisionNumber": str(new_version),
+                "RevisionNumber": str(new_revision_number),
                 "LastRevisionDelta": str(delta),
                 "origin": "revision"
             },
-            version=new_version,
-            parent_id=proposal_id,
             active=True,
-            author_id=old_proposal.author_id,  # Inherit author from original
-            author_type=old_proposal.author_type  # Inherit author type
+            author=old_proposal.author,  # Inherit author from original
+            author_type=old_proposal.author_type,  # Inherit author type
+            parent_id=proposal_id,  # Link to parent proposal
+            revision_number=new_revision_number,
+            type=old_proposal.type  # Inherit type
         )
         
         # Add new proposal to issue
@@ -443,6 +461,11 @@ class TheBureau:
         
         # Update agent assignment to new version
         self.current_issue.agent_to_proposal_id[agent_id] = new_proposal_id
+        
+        # Update agent's latest_proposal_id
+        selected_agent = self.current_consensus.run_config.selected_agents.get(agent_id)
+        if selected_agent:
+            selected_agent.latest_proposal_id = new_proposal_id
         
         # Transfer stake from old to new proposal
         stake_transferred = self.creditmgr.transfer_stake(
@@ -457,7 +480,7 @@ class TheBureau:
                 "event_type": "revision_warning",
                 "agent_id": agent_id,
                 "reason": "no_stake_to_transfer"
-            }).warning(f"No stake found to transfer from {proposal_id} to {new_proposal_id}")
+            }).warning(f"No stake found to transfer from #{proposal_id} to #{new_proposal_id}")
         
         # Log a Revision event to the ledger with version lineage
         revision_event = {
@@ -470,7 +493,7 @@ class TheBureau:
             "parent_id": proposal_id,
             "new_proposal_id": new_proposal_id,
             "delta": delta,
-            "revision_number": new_version,
+            "revision_number": new_revision_number,
             "cp_cost": cost
         }
         self.creditmgr.events.append(revision_event)
@@ -485,10 +508,10 @@ class TheBureau:
             "new_proposal_id": new_proposal_id,
             "delta": delta,
             "cost": cost,
-            "version": new_version,
+            "revision_number": new_revision_number,
             "issue_id": issue_id,
             "tick": tick
-        }).info(f"Revision accepted from {agent_id}: {proposal_id} → {new_proposal_id} (Δ={delta}, cost={cost}CP)")
+        }).info(f"Revision accepted from {agent_id}: #{proposal_id} → #{new_proposal_id} (Δ={delta}, cost={cost}CP, rev{new_revision_number})")
     
     def receive_stake(self, agent_id: str, payload: dict):
         """Process a stake action from an agent - deduct CP and record stake with conviction tracking."""
@@ -542,6 +565,20 @@ class TheBureau:
                 "agent_id": agent_id,
                 "reason": "missing_proposal_id"
             }).warning(f"Rejected stake from {agent_id}: Missing proposal ID")
+            return
+        
+        # Validation 5: Check if agent is self-staking on their latest proposal
+        agent_current_proposal = self.current_issue.agent_to_proposal_id.get(agent_id)
+        selected_agent = self.current_consensus.run_config.selected_agents.get(agent_id)
+        
+        if agent_current_proposal == proposal_id and selected_agent and selected_agent.latest_proposal_id != proposal_id:
+            logger.bind(event_dict={
+                "event_type": "stake_rejected",
+                "agent_id": agent_id,
+                "reason": "not_latest_proposal",
+                "proposal_id": proposal_id,
+                "latest_proposal_id": selected_agent.latest_proposal_id
+            }).warning(f"Rejected stake from {agent_id}: Can only self-stake on latest proposal (staking on #{proposal_id}, latest is #{selected_agent.latest_proposal_id})")
             return
         
         # Attempt to deduct CP

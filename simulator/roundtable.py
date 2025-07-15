@@ -59,12 +59,18 @@ class FeedbackPhase(Phase):
         tick = state.get("tick")
         
         for agent in agents:
+            # Get all available proposals for agent decision making
+            all_proposals = list(state.get("agent_proposal_ids", {}).values())
+            current_proposal_id = state.get("agent_proposal_ids", {}).get(agent.agent_id)
+            
             agent.on_signal({
                 "type": "Feedback",
                 "cycle_number": self.cycle_number,
                 "tick": tick,
                 "issue_id": issue_id,
-                "max_feedback": self.max_feedback_per_agent
+                "max_feedback": self.max_feedback_per_agent,
+                "all_proposals": all_proposals,
+                "current_proposal_id": current_proposal_id
             })
         
         return state
@@ -98,6 +104,9 @@ class RevisePhase(Phase):
             # Get agent's current proposal ID - this should be passed from bureau
             current_proposal_id = state.get("agent_proposal_ids", {}).get(agent.agent_id)
             
+            # Get all available proposals for agent decision making
+            all_proposals = list(state.get("agent_proposal_ids", {}).values())
+            
             agent.on_signal({
                 "type": "Revise",
                 "cycle_number": self.cycle_number,
@@ -105,7 +114,8 @@ class RevisePhase(Phase):
                 "issue_id": issue_id,
                 "proposal_self_stake": self.proposal_self_stake,
                 "feedback_received": feedback_received,
-                "current_proposal_id": current_proposal_id
+                "current_proposal_id": current_proposal_id,
+                "all_proposals": all_proposals
             })
         
         return state
@@ -171,6 +181,9 @@ class StakePhase(Phase):
             # Get agent's current proposal ID
             current_proposal_id = state.get("agent_proposal_ids", {}).get(agent.agent_id)
             
+            # Get all available proposals for agent decision making
+            all_proposals = list(state.get("agent_proposal_ids", {}).values())
+            
             agent.on_signal({
                 "type": "Stake",
                 "round_number": self.round_number,
@@ -178,7 +191,8 @@ class StakePhase(Phase):
                 "tick": tick,
                 "issue_id": issue_id,
                 "current_balance": current_balance,
-                "current_proposal_id": current_proposal_id
+                "current_proposal_id": current_proposal_id,
+                "all_proposals": all_proposals
             })
         
         return state
@@ -680,6 +694,21 @@ class Consensus:
             "tick": tick
         }).info(f"Issue {issue_id} finalized at tick {tick}")
 
+    def _format_proposal_display(self, proposal_id, issue_id):
+        """Format proposal ID for display as #ID (author, revN)."""
+        if proposal_id == 0:
+            return "#0 (System)"
+        
+        # Look up the proposal in the current issue
+        bureau = self.state.get("bureau")
+        if bureau and bureau.current_issue and bureau.current_issue.issue_id == issue_id:
+            for proposal in bureau.current_issue.proposals:
+                if proposal.proposal_id == proposal_id:
+                    return f"#{proposal_id} ({proposal.author}, rev{proposal.revision_number})"
+        
+        # Fallback if proposal not found
+        return f"#{proposal_id}"
+
     def _print_finalization_summary(self, proposal_weights, winner_proposal_id, issue_id, tick):
         """Print human-readable finalization summary showing influence flow and proposal outcomes."""
         print("\n" + "="*70)
@@ -705,8 +734,9 @@ class Consensus:
             effective_weight = data["total_effective_weight"]
             raw_weight = data["total_raw_weight"]
             contributors = data["contributor_count"]
+            formatted_proposal = self._format_proposal_display(proposal_id, issue_id)
             
-            print(f"{marker:10} {proposal_id:<20} "
+            print(f"{marker:10} {formatted_proposal:<30} "
                   f"Effective: {effective_weight:>8.2f} CP  "
                   f"Raw: {raw_weight:>6} CP  "
                   f"Contributors: {contributors}")
@@ -718,7 +748,8 @@ class Consensus:
         
         # Show detailed influence flow for each proposal
         for proposal_id, data in ranked_proposals:
-            print(f"\n📋 {proposal_id}:")
+            formatted_proposal = self._format_proposal_display(proposal_id, issue_id)
+            print(f"\n📋 {formatted_proposal}:")
             
             # Find all agents who supported this proposal
             supporters = []

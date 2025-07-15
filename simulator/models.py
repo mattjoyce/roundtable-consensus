@@ -6,16 +6,17 @@ from loguru import logger
 
 class Proposal(BaseModel):
     tick: int
-    proposal_id: str
+    proposal_id: int  # Sequential integer ID
     content: str
-    agent_id: str  # Keep for backward compatibility, represents current backer/assignee
+    agent_id: str  # Current backer/assignee
     issue_id: str
     metadata: Optional[Dict[str, str]] = {}
-    version: int = 1
-    parent_id: Optional[str] = None
     active: bool = True
-    author_id: Optional[str] = None  # Who actually created/authored this proposal
+    author: str  # Agent name who created the proposal
     author_type: str = "agent"  # "agent" or "system"
+    parent_id: Optional[int] = None  # Previous version ID for revisions
+    revision_number: int = 1  # Version number (starts at 1)
+    type: str = "standard"  # Either 'standard' or 'noaction'
 
 class Agent(BaseModel):
     agent_id: str
@@ -31,6 +32,7 @@ class AgentActor(BaseModel):
     seed: Optional[int] = None  # Optional seed for reproducibility
     rng: Optional[random.Random] = None
     memory: Dict[str, Any] = {}
+    latest_proposal_id: Optional[int] = None  # Track agent's current proposal
 
     def on_signal(self, payload: Dict[str, str|int]) -> Optional[dict]:
         """Handle signals sent to the agent."""
@@ -45,7 +47,8 @@ class AgentActor(BaseModel):
             metadata=self.metadata.copy() if self.metadata else {},
             seed=self.seed,
             rng=new_rng,
-            memory={}
+            memory={},
+            latest_proposal_id=self.latest_proposal_id
         )
 
 class AgentPool(BaseModel):
