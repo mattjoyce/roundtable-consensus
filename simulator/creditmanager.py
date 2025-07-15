@@ -8,7 +8,7 @@ class CreditManager:
         # Map agent_id -> current CP balance
         self.balances = dict(initial_balances)  # Make a copy
         self.events = []  # Burn / Transfer / Rejection logs
-        self.proposal_stakes = {}  # proposal_id -> staked amount
+        self.stake_ledger = []  # List of stake records: {proposal_id, amount, staked_by, round, tick, issue_id, stake_type}
         
         # Conviction tracking structures
         self.conviction_ledger = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> accumulated stake
@@ -109,37 +109,80 @@ class CreditManager:
 
     def stake_to_proposal(self, agent_id: str, proposal_id: str, amount: int, tick: int, issue_id: str) -> bool:
         if self.attempt_deduct(agent_id, amount, "Proposal Self Stake", tick, issue_id):
-            self.proposal_stakes[proposal_id] = amount
+            # Add stake record to ledger
+            stake_record = {
+                "proposal_id": proposal_id,
+                "amount": amount,
+                "staked_by": agent_id,
+                "round": 0,  # Initial proposal stakes are round 0
+                "tick": tick,
+                "issue_id": issue_id,
+                "stake_type": "initial"
+            }
+            self.stake_ledger.append(stake_record)
+            
             logger.bind(event_dict={
                 "event_type": "stake_recorded",
                 "agent_id": agent_id,
                 "proposal_id": proposal_id,
                 "amount": amount,
                 "tick": tick,
-                "issue_id": issue_id
-            }).info(f"Staked {amount} CP from {agent_id} to proposal {proposal_id}")
+                "issue_id": issue_id,
+                "stake_type": "initial"
+            }).info(f"Stake recorded: {agent_id} staked {amount} CP on {proposal_id} (Round 0, proposal_stake) - Ledger entry added")
             return True
         return False
 
     def transfer_stake(self, old_proposal_id: str, new_proposal_id: str, tick: int, issue_id: str) -> bool:
         """Transfer stake from old proposal to new proposal (for versioned revisions)."""
-        if old_proposal_id in self.proposal_stakes:
-            amount = self.proposal_stakes[old_proposal_id]
-            # Remove stake from old proposal
-            del self.proposal_stakes[old_proposal_id]
-            # Add stake to new proposal
-            self.proposal_stakes[new_proposal_id] = amount
+        # Find all stakes for the old proposal
+        old_stakes = [record for record in self.stake_ledger if record["proposal_id"] == old_proposal_id]
+        
+        if old_stakes:
+            # Update each stake record to point to new proposal
+            for record in old_stakes:
+                record["proposal_id"] = new_proposal_id
+                record["tick"] = tick  # Update to current tick
+                
+                logger.bind(event_dict={
+                    "event_type": "stake_transferred",
+                    "old_proposal_id": old_proposal_id,
+                    "new_proposal_id": new_proposal_id,
+                    "amount": record["amount"],
+                    "staked_by": record["staked_by"],
+                    "tick": tick,
+                    "issue_id": issue_id
+                }).info(f"Transferred stake of {record['amount']} CP from {old_proposal_id} to {new_proposal_id} (agent: {record['staked_by']})")
             
-            logger.bind(event_dict={
-                "event_type": "stake_transferred",
-                "old_proposal_id": old_proposal_id,
-                "new_proposal_id": new_proposal_id,
-                "amount": amount,
-                "tick": tick,
-                "issue_id": issue_id
-            }).info(f"Transferred stake of {amount} CP from {old_proposal_id} to {new_proposal_id}")
             return True
         return False
+
+    def get_agent_stakes(self, agent_id: str, issue_id: str = None) -> list:
+        """Get all stakes by a specific agent."""
+        stakes = [record for record in self.stake_ledger if record["staked_by"] == agent_id]
+        if issue_id:
+            stakes = [record for record in stakes if record["issue_id"] == issue_id]
+        return stakes
+    
+    def get_proposal_stakes(self, proposal_id: str, issue_id: str = None) -> list:
+        """Get all stakes to a specific proposal."""
+        stakes = [record for record in self.stake_ledger if record["proposal_id"] == proposal_id]
+        if issue_id:
+            stakes = [record for record in stakes if record["issue_id"] == issue_id]
+        return stakes
+    
+    def get_total_stake_for_proposal(self, proposal_id: str, issue_id: str = None) -> int:
+        """Get the total amount staked to a specific proposal."""
+        stakes = self.get_proposal_stakes(proposal_id, issue_id)
+        return sum(record["amount"] for record in stakes)
+    
+    def get_agent_stake_on_proposal(self, agent_id: str, proposal_id: str, issue_id: str = None) -> int:
+        """Get the total amount a specific agent has staked on a specific proposal."""
+        stakes = [record for record in self.stake_ledger 
+                 if record["staked_by"] == agent_id and record["proposal_id"] == proposal_id]
+        if issue_id:
+            stakes = [record for record in stakes if record["issue_id"] == issue_id]
+        return sum(record["amount"] for record in stakes)
 
     def calculate_conviction_multiplier(self, agent_id: str, proposal_id: str, conviction_params: dict) -> float:
         """Calculate conviction multiplier based on consecutive rounds and conviction parameters."""

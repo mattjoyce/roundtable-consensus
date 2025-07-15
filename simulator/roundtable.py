@@ -133,6 +133,38 @@ class StakePhase(Phase):
         tick = state.get("tick")
         creditmgr = state.get("creditmgr")
         
+        # Transfer initial proposal stakes to conviction tracking on first STAKE round
+        if self.round_number == 1 and creditmgr:
+            # Get all initial stakes from the ledger for this issue
+            initial_stakes = [record for record in creditmgr.stake_ledger 
+                            if record["stake_type"] == "initial" and record["issue_id"] == issue_id]
+            
+            for stake_record in initial_stakes:
+                agent_id = stake_record["staked_by"]
+                proposal_id = stake_record["proposal_id"]
+                stake_amount = stake_record["amount"]
+                
+                # Initialize conviction tracking with the initial proposal stake
+                conviction_details = creditmgr.update_conviction(
+                    agent_id=agent_id,
+                    proposal_id=proposal_id,
+                    stake_amount=stake_amount,
+                    conviction_params=self.conviction_params,
+                    tick=tick,
+                    issue_id=issue_id
+                )
+                
+                logger.bind(event_dict={
+                    "event_type": "proposal_stake_transferred",
+                    "agent_id": agent_id,
+                    "proposal_id": proposal_id,
+                    "stake_amount": stake_amount,
+                    "conviction_multiplier": conviction_details["multiplier"],
+                    "effective_weight": conviction_details["effective_weight"],
+                    "tick": tick,
+                    "issue_id": issue_id
+                }).info(f"Transferred initial proposal stake: {agent_id} {stake_amount} CP → {proposal_id} (Round 1, effective weight: {conviction_details['effective_weight']})")
+        
         for agent in agents:
             # Include current balance in the signal
             current_balance = creditmgr.get_balance(agent.agent_id) if creditmgr else 0
@@ -353,12 +385,15 @@ class Consensus:
         }).debug(f"Tick {self.state['tick']} — Phase {self.state['current_phase']} (Phase Tick {self.state['phase_tick']})")
 
         # Phase complete: skip execution, advance phase
-        if self.all_agents_ready:
+        current_phase = self.get_current_phase()
+        phase_ticks_expired = current_phase and self.state['phase_tick'] > current_phase.max_think_ticks
+        
+        if self.all_agents_ready and phase_ticks_expired:
             logger.bind(event_dict={
                 "event_type": "phase_transition",
                 "tick": self.state['tick'],
                 "current_phase_index": self.current_phase_index
-            }).info("All agents ready — transitioning to next phase.")
+            }).info("All agents ready and think ticks expired — transitioning to next phase.")
             self.current_phase_index += 1
 
         else:

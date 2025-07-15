@@ -89,17 +89,22 @@ class TheBureau:
                     "phase_number": current_phase.phase_number,
                     "issue_id": self.current_issue.issue_id if self.current_issue else None
                 }).warning(f"Timeout {current_phase.phase_type} Phase [{current_phase.phase_number}] at tick {consensus.state['tick']}")
+                # Get unready agents AND ready agents who don't have stakes assigned
                 unready = self.current_consensus.get_unready_agents()
+                all_agent_ids = set(self.creditmgr.get_all_balances().keys())
+                unassigned_ready = [agent_id for agent_id in all_agent_ids 
+                                  if agent_id not in unready and not self.current_issue.is_assigned(agent_id)]
+                unstaked_agents = unready + unassigned_ready
 
-                if len(unready) != 0:
+                if len(unstaked_agents) != 0:
                     proposal= self.create_no_action_proposal(
                         tick=self.current_consensus.state["tick"],
                         agent_id="z",
                         issue_id=self.current_issue.issue_id
                     )
                     self.current_issue.add_proposal(proposal)
-                    #link unready agent to no action proposal
-                    for agent_id in unready:
+                    #link unstaked agent to no action proposal
+                    for agent_id in unstaked_agents:
                         # Only PROPOSE phase requires proposal submission cost
                         if current_phase.phase_type == "PROPOSE":
                             self.creditmgr.stake_to_proposal(
