@@ -211,11 +211,10 @@ class FeedbackPhase(Phase):
         target_proposals = set()
         
         if state.current_issue:
-            for feedback_list in state.current_issue.feedback.values():
-                total_feedbacks += len(feedback_list)
-                for feedback in feedback_list:
-                    agents_with_feedback.add(feedback["agent_id"])
-                    target_proposals.add(feedback["target_proposal_id"])
+            total_feedbacks = len(state.current_issue.feedback_log)
+            for feedback in state.current_issue.feedback_log:
+                agents_with_feedback.add(feedback["from"])
+                target_proposals.add(feedback["to"])
         
         # Force all agents ready on phase timeout
         for agent_id in config.agent_ids:
@@ -224,7 +223,7 @@ class FeedbackPhase(Phase):
         log_event(LogEntry(
             tick=state.tick,
             phase=PhaseType.FEEDBACK,
-            event_type=EventType.PHASE_COMPLETION,
+            event_type=EventType.PHASE_TRANSITION,
             payload={
                 "phase_number": self.phase_number,
                 "cycle_number": self.cycle_number,
