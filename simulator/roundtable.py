@@ -1,7 +1,7 @@
-from models import GlobalConfig, RunConfig, AgentActor
+from models import GlobalConfig, RunConfig, UnifiedConfig, RoundtableState, AgentActor
 import random
 from typing import List, Dict
-from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
+from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel, save_state_snapshot
 
 class Phase:
     def __init__(self, phase_type: str, phase_number: int, max_think_ticks: int = 3):
@@ -9,19 +9,127 @@ class Phase:
         self.phase_number = phase_number
         self.max_think_ticks = max_think_ticks  
     
-    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
-        raise NotImplementedError("Subclasses must implement execute")
+    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
+        """Execute phase with lifecycle: begin -> do -> finish."""
+        # Handle lifecycle methods conditionally
+        if state.phase_tick == 1:
+            self._begin(state, config, creditmgr)
+        
+        self._do(state, agents, config)
+        
+        if state.phase_tick == self.max_think_ticks:
+            self._finish(state, config, creditmgr)
     
-    def is_complete(self, state: Dict) -> bool:
+    def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Initialize phase when it starts."""
+        pass
+    
+    def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Clean up phase when it ends."""
+        pass
+    
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+        """Execute main phase logic."""
+        raise NotImplementedError("Subclasses must implement _do")
+    
+    def signal_ready(self, agent_id: str, state: RoundtableState) -> None:
+        """Mark agent as ready."""
+        if agent_id in state.agent_readiness:
+            state.agent_readiness[agent_id] = True
+    
+    def is_complete(self, state: RoundtableState) -> bool:
         raise NotImplementedError("Subclasses must implement is_complete")
 
 class ProposePhase(Phase):
     def __init__(self, phase_number: int, max_think_ticks: int = 3):
         super().__init__("PROPOSE", phase_number, max_think_ticks)
     
-    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+    def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Create NoAction proposal #0."""
+        if state.current_issue:
+            # Check if NoAction proposal already exists
+            existing_noaction = next(
+                (p for p in state.current_issue.proposals if p.proposal_id == 0),
+                None
+            )
+            if not existing_noaction:
+                from models import Proposal
+                noaction_proposal = Proposal(
+                    proposal_id=0,  # NoAction always uses ID 0
+                    content="Take no Action",
+                    agent_id="system",
+                    issue_id=state.current_issue.issue_id,
+                    tick=state.tick,
+                    author="system",
+                    author_type="system",
+                    type="noaction",
+                    revision_number=1,
+                )
+                state.current_issue.add_proposal(noaction_proposal)
+                log_event(LogEntry(
+                    tick=state.tick,
+                    phase=PhaseType.PROPOSE,
+                    event_type=EventType.PROPOSAL_RECEIVED,
+                    payload={
+                        "proposal_id": noaction_proposal.proposal_id,
+                        "agent_id": "system",
+                        "issue_id": state.current_issue.issue_id,
+                        "proposal_type": "noaction"
+                    },
+                    message=f"NoAction proposal #0 created for issue {state.current_issue.issue_id}"
+                ))
+    
+    def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Handle timeout: stake inactive agents to NoAction."""
+        if not creditmgr or not state.current_issue:
+            return
+            
+        # Find unready agents and ready agents without stakes
+        all_agent_ids = set(creditmgr.get_all_balances().keys())
+        unready_agents = [aid for aid, ready in state.agent_readiness.items() if not ready]
+        unassigned_ready = [
+            agent_id for agent_id in all_agent_ids
+            if agent_id not in unready_agents
+            and not state.current_issue.is_assigned(agent_id)
+        ]
+        unstaked_agents = unready_agents + unassigned_ready
+        
+        if unstaked_agents:
+            # Get NoAction proposal (should exist from _begin)
+            noaction_proposal = next(
+                (p for p in state.current_issue.proposals if p.proposal_id == 0),
+                None
+            )
+            
+            if noaction_proposal:
+                # Link unstaked agents to NoAction and stake for them
+                for agent_id in unstaked_agents:
+                    creditmgr.stake_to_proposal(
+                        agent_id=agent_id,
+                        proposal_id=noaction_proposal.proposal_id,
+                        amount=config.proposal_self_stake,
+                        tick=state.tick,
+                        issue_id=state.current_issue.issue_id,
+                    )
+                    
+                    state.current_issue.assign_agent_to_proposal(
+                        agent_id, noaction_proposal.proposal_id
+                    )
+                    self.signal_ready(agent_id, state)
+                    
+                    log_event(LogEntry(
+                        tick=state.tick,
+                        phase=PhaseType.PROPOSE,
+                        event_type=EventType.AGENT_READY,
+                        agent_id=agent_id,
+                        payload={"reason": "no_action_proposal"},
+                        message=f"Agent {agent_id} assigned to NoAction on timeout"
+                    ))
+    
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+        """Signal agents to make proposal decisions."""
         log_event(LogEntry(
-            tick=state.get("tick"),
+            tick=state.tick,
             phase=PhaseType.PROPOSE,
             event_type=EventType.PHASE_EXECUTION,
             payload={
@@ -35,11 +143,10 @@ class ProposePhase(Phase):
                 "type": "Propose",
                 "phase_number": self.phase_number,
                 "max_think_ticks": self.max_think_ticks,
-                "issue_id": state.get("issue_id")
+                "issue_id": config.issue_id
             })
-        return state
     
-    def is_complete(self, state: Dict) -> bool:
+    def is_complete(self, state: RoundtableState) -> bool:
         return True
 
 class FeedbackPhase(Phase):
@@ -50,9 +157,9 @@ class FeedbackPhase(Phase):
         self.feedback_stake = feedback_stake
         self.max_feedback_per_agent = max_feedback_per_agent
     
-    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
         log_event(LogEntry(
-            tick=state.get("tick"),
+            tick=state.tick,
             phase=PhaseType.FEEDBACK,
             event_type=EventType.PHASE_EXECUTION,
             payload={
@@ -63,27 +170,22 @@ class FeedbackPhase(Phase):
             message=f"Executing Feedback Phase [{self.phase_number}] for cycle {self.cycle_number} with max feedback per agent {self.max_feedback_per_agent}"
         ))
         
-        issue_id = state.get("issue_id")
-        tick = state.get("tick")
-        
         for agent in agents:
             # Get all available proposals for agent decision making
-            all_proposals = list(state.get("agent_proposal_ids", {}).values())
-            current_proposal_id = state.get("agent_proposal_ids", {}).get(agent.agent_id)
+            all_proposals = list(state.agent_proposal_ids.values())
+            current_proposal_id = state.agent_proposal_ids.get(agent.agent_id)
             
             agent.on_signal({
                 "type": "Feedback",
                 "cycle_number": self.cycle_number,
-                "tick": tick,
-                "issue_id": issue_id,
+                "tick": state.tick,
+                "issue_id": config.issue_id,
                 "max_feedback": self.max_feedback_per_agent,
                 "all_proposals": all_proposals,
                 "current_proposal_id": current_proposal_id
             })
-        
-        return state
     
-    def is_complete(self, state: Dict) -> bool:
+    def is_complete(self, state: RoundtableState) -> bool:
         return True
 
 class RevisePhase(Phase):
@@ -93,9 +195,9 @@ class RevisePhase(Phase):
         self.cycle_number = cycle_number
         self.proposal_self_stake = proposal_self_stake
     
-    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
         log_event(LogEntry(
-            tick=state.get("tick"),
+            tick=state.tick,
             phase=PhaseType.REVISE,
             event_type=EventType.PHASE_EXECUTION,
             payload={
@@ -106,33 +208,28 @@ class RevisePhase(Phase):
             message=f"Executing Revise Phase [{self.phase_number}] for cycle {self.cycle_number} with proposal self-stake {self.proposal_self_stake}"
         ))
         
-        issue_id = state.get("issue_id")
-        tick = state.get("tick")
-        
         for agent in agents:
             # TODO: Get actual feedback received for this agent's proposal
             feedback_received = []  # Placeholder - should be populated with actual feedback
             
-            # Get agent's current proposal ID - this should be passed from bureau
-            current_proposal_id = state.get("agent_proposal_ids", {}).get(agent.agent_id)
+            # Get agent's current proposal ID
+            current_proposal_id = state.agent_proposal_ids.get(agent.agent_id)
             
             # Get all available proposals for agent decision making
-            all_proposals = list(state.get("agent_proposal_ids", {}).values())
+            all_proposals = list(state.agent_proposal_ids.values())
             
             agent.on_signal({
                 "type": "Revise",
                 "cycle_number": self.cycle_number,
-                "tick": tick,
-                "issue_id": issue_id,
+                "tick": state.tick,
+                "issue_id": config.issue_id,
                 "proposal_self_stake": self.proposal_self_stake,
                 "feedback_received": feedback_received,
                 "current_proposal_id": current_proposal_id,
                 "all_proposals": all_proposals
             })
-        
-        return state
     
-    def is_complete(self, state: Dict) -> bool:
+    def is_complete(self, state: RoundtableState) -> bool:
         return True
 
 class StakePhase(Phase):
@@ -142,9 +239,9 @@ class StakePhase(Phase):
         self.round_number = round_number
         self.conviction_params = conviction_params
     
-    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
         log_event(LogEntry(
-            tick=state.get("tick"),
+            tick=state.tick,
             phase=PhaseType.STAKE,
             event_type=EventType.PHASE_EXECUTION,
             payload={
@@ -155,15 +252,11 @@ class StakePhase(Phase):
             message=f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}"
         ))
         
-        issue_id = state.get("issue_id")
-        tick = state.get("tick")
-        creditmgr = state.get("creditmgr")
-        
         # Transfer initial proposal stakes to conviction tracking on first STAKE round
-        if self.round_number == 1 and creditmgr:
+        if self.round_number == 1:
             # Get all initial stakes from the ledger for this issue
-            initial_stakes = [record for record in creditmgr.stake_ledger 
-                            if record["stake_type"] == "initial" and record["issue_id"] == issue_id]
+            initial_stakes = [record for record in state.stake_ledger 
+                            if record["stake_type"] == "initial" and record["issue_id"] == config.issue_id]
             
             for stake_record in initial_stakes:
                 agent_id = stake_record["staked_by"]
@@ -171,62 +264,55 @@ class StakePhase(Phase):
                 stake_amount = stake_record["amount"]
                 
                 # Initialize conviction tracking with the initial proposal stake
-                conviction_details = creditmgr.update_conviction(
-                    agent_id=agent_id,
-                    proposal_id=proposal_id,
-                    stake_amount=stake_amount,
-                    conviction_params=self.conviction_params,
-                    tick=tick,
-                    issue_id=issue_id
-                )
+                # Note: This will need creditmgr reference - we'll pass it through config or find another way
+                # For now, let's update the conviction tracking directly on state
+                state.conviction_ledger[agent_id][proposal_id] += stake_amount
+                state.conviction_rounds[agent_id][proposal_id] = 1
+                state.conviction_rounds_held[agent_id][proposal_id] = 1
                 
                 log_event(LogEntry(
-                    tick=tick,
+                    tick=state.tick,
                     phase=PhaseType.STAKE,
                     event_type=EventType.PROPOSAL_STAKE_TRANSFERRED,
                     payload={
                         "agent_id": agent_id,
                         "proposal_id": proposal_id,
                         "stake_amount": stake_amount,
-                        "conviction_multiplier": conviction_details["multiplier"],
-                        "effective_weight": conviction_details["effective_weight"],
-                        "issue_id": issue_id
+                        "issue_id": config.issue_id
                     },
-                    message=f"Transferred initial proposal stake: {agent_id} {stake_amount} CP → {proposal_id} (Round 1, effective weight: {conviction_details['effective_weight']})"
+                    message=f"Transferred initial proposal stake: {agent_id} {stake_amount} CP → {proposal_id} (Round 1)"
                 ))
         
         for agent in agents:
             # Include current balance in the signal
-            current_balance = creditmgr.get_balance(agent.agent_id) if creditmgr else 0
+            current_balance = state.agent_balances.get(agent.agent_id, 0)
             # Get agent's current proposal ID
-            current_proposal_id = state.get("agent_proposal_ids", {}).get(agent.agent_id)
+            current_proposal_id = state.agent_proposal_ids.get(agent.agent_id)
             
             # Get all available proposals for agent decision making
-            all_proposals = list(state.get("agent_proposal_ids", {}).values())
+            all_proposals = list(state.agent_proposal_ids.values())
             
             agent.on_signal({
                 "type": "Stake",
                 "round_number": self.round_number,
                 "conviction_params": self.conviction_params,
-                "tick": tick,
-                "issue_id": issue_id,
+                "tick": state.tick,
+                "issue_id": config.issue_id,
                 "current_balance": current_balance,
                 "current_proposal_id": current_proposal_id,
                 "all_proposals": all_proposals
             })
-        
-        return state
     
-    def is_complete(self, state: Dict) -> bool:
+    def is_complete(self, state: RoundtableState) -> bool:
         return True
 
 class FinalizePhase(Phase):
     def __init__(self, phase_number: int, max_think_ticks: int = 3):
         super().__init__("FINALIZE", phase_number, max_think_ticks)
     
-    def execute(self, state: Dict, agents: List[AgentActor]) -> Dict:
+    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
         log_event(LogEntry(
-            tick=state.get("tick"),
+            tick=state.tick,
             phase=PhaseType.FINALIZE,
             event_type=EventType.PHASE_EXECUTION,
             payload={
@@ -236,23 +322,19 @@ class FinalizePhase(Phase):
             message=f"Executing Finalize Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}"
         ))
         # Signal agents about finalization phase (optional)
-        issue_id = state.get("issue_id")
-        tick = state.get("tick")
         
         for agent in agents:
             agent.on_signal({
                 "type": "Finalize",
                 "phase_number": self.phase_number,
-                "tick": tick,
-                "issue_id": issue_id
+                "tick": state.tick,
+                "issue_id": config.issue_id
             })
-        
-        return state
     
-    def is_complete(self, state: Dict) -> bool:
+    def is_complete(self, state: RoundtableState) -> bool:
         return True
 
-def generate_phases(global_config: GlobalConfig) -> List[Phase]:
+def generate_phases(config: UnifiedConfig) -> List[Phase]:
     phases = []
     phase_counter = 0
     
@@ -264,13 +346,13 @@ def generate_phases(global_config: GlobalConfig) -> List[Phase]:
     phase_counter += 1
     
     # 2. FEEDBACK → REVISE cycles
-    for cycle in range(global_config.revision_cycles):
+    for cycle in range(config.revision_cycles):
         # FEEDBACK phase
         phases.append(FeedbackPhase(
             phase_number=phase_counter,
             cycle_number=cycle + 1,
-            feedback_stake=global_config.feedback_stake,
-            max_feedback_per_agent=global_config.max_feedback_per_agent,
+            feedback_stake=config.feedback_stake,
+            max_feedback_per_agent=config.max_feedback_per_agent,
             max_think_ticks=3
         ))
         phase_counter += 1
@@ -279,7 +361,7 @@ def generate_phases(global_config: GlobalConfig) -> List[Phase]:
         phases.append(RevisePhase(
             phase_number=phase_counter,
             cycle_number=cycle + 1,
-            proposal_self_stake=global_config.proposal_self_stake,
+            proposal_self_stake=config.proposal_self_stake,
             max_think_ticks=3
         ))
         phase_counter += 1
@@ -288,18 +370,18 @@ def generate_phases(global_config: GlobalConfig) -> List[Phase]:
     phases.append(StakePhase(
         phase_number=phase_counter,
         round_number=1,
-        conviction_params=global_config.conviction_params,
+        conviction_params=config.conviction_params,
         max_think_ticks=3
     ))
     phase_counter += 1
     
     # Additional stake rounds for conviction building
-    staking_rounds = global_config.staking_rounds
+    staking_rounds = config.staking_rounds
     for stake_round in range(2, staking_rounds + 2):
         phases.append(StakePhase(
             phase_number=phase_counter,
             round_number=stake_round,
-            conviction_params=global_config.conviction_params,
+            conviction_params=config.conviction_params,
             max_think_ticks=3
         ))
         phase_counter += 1
@@ -312,126 +394,57 @@ def generate_phases(global_config: GlobalConfig) -> List[Phase]:
     
     return phases
 
-class CreditManager:
-    def __init__(self, initial_balances: dict):
-        # Map agent_id -> current CP balance
-        self.balances = dict(initial_balances)  # Make a copy
-        self.events = []  # Burn / Transfer / Rejection logs
-
-    def get_balance(self, agent_id: str) -> int:
-        return self.balances.get(agent_id, 0)
-
-    def attempt_deduct(self, agent_id: str, amount: int, reason: str, tick: int, issue_id: str) -> bool:
-        if self.get_balance(agent_id) >= amount:
-            self.balances[agent_id] -= amount
-            self.events.append({
-                "type": "Burn",
-                "agent_id": agent_id,
-                "amount": amount,
-                "reason": reason,
-                "tick": tick,
-                "issue_id": issue_id
-            })
-            return True
-        else:
-            self.events.append({
-                "type": "InsufficientCredit",
-                "agent_id": agent_id,
-                "amount": amount,
-                "reason": reason,
-                "tick": tick,
-                "issue_id": issue_id
-            })
-            return False
-
-    def credit(self, agent_id: str, amount: int, reason: str, tick: int, issue_id: str):
-        self.balances[agent_id] = self.get_balance(agent_id) + amount
-        self.events.append({
-            "type": "Credit",
-            "agent_id": agent_id,
-            "amount": amount,
-            "reason": reason,
-            "tick": tick,
-            "issue_id": issue_id
-        })
-
-    def get_all_balances(self) -> dict:
-        return dict(self.balances)
-
-    def get_events(self) -> list:
-        return list(self.events)
 
 
 class Consensus:
-    def __init__(self, global_config: GlobalConfig, run_config: RunConfig, creditmgr: CreditManager):
-        self.gc = global_config
-        self.rc = run_config
+    def __init__(self, config: UnifiedConfig, state: RoundtableState, creditmgr):
+        self.config = config
+        self.state = state
         self.creditmgr = creditmgr
-        self.state = self._init_state()
-        self.ledger = []
-        self.phases = generate_phases(global_config)
+        self.phases = generate_phases(config)
         self.current_phase_index = 0
-        self.agent_ready: Dict[str, bool] = {}  # agent_id → True/False
-        
-        # Initialize agent readiness
-        for agent_id in self.rc.agent_ids:
-            self.agent_ready[agent_id] = False
-
-    def _init_state(self):
-        return {
-            "tick": 0,
-            "agents": self.rc.agent_ids,
-            "balances": self.rc.get_initial_balances(),
-            "proposals": dict(self.rc.initial_proposals),
-            "current_phase": None,
-            "creditmgr": self.creditmgr,
-            "phase_start_tick": 0,
-            "phase_tick": 0,
-            "ready_agents": set()
-        }
 
     def run(self):
-        """Run the consensus simulation until completion."""
+        """Run the consensus until completion to solve the issue."""
         # check the issue is set
-        if not self.rc.issue_id:
-            raise ValueError("RunConfig must have a valid issue_id set.")
+        if not self.config.issue_id:
+            raise ValueError("Config must have a valid issue_id set.")
         while not self._is_complete():
             self.tick()
         return self._summarize_results()
 
     def tick(self):
-        self.state["tick"] += 1
+        self.state.tick += 1
         current_phase = self.get_current_phase()
 
         # Phase transition detection
-        if current_phase.phase_type != self.state["current_phase"]:
-            self.state["current_phase"] = current_phase.phase_type
-            self.state["phase_start_tick"] = self.state["tick"]
-            self.state["phase_tick"] = 1
-            self.state["ready_agents"] = set()
+        if current_phase.phase_type != self.state.current_phase:
+            self.state.current_phase = current_phase.phase_type
+            self.state.phase_start_tick = self.state.tick
+            self.state.phase_tick = 1
             # Reset agent readiness for new phase
-            self.agent_ready = {aid: False for aid in self.agent_ready}
+            self.state.agent_readiness = {aid: False for aid in self.state.agent_readiness}
         else:
-            self.state["phase_tick"] += 1
+            self.state.phase_tick += 1
 
         log_event(LogEntry(
-            tick=self.state['tick'],
-            phase=PhaseType(self.state['current_phase']) if self.state['current_phase'] else None,
+            tick=self.state.tick,
+            phase=PhaseType(self.state.current_phase) if self.state.current_phase else None,
             event_type=EventType.CONSENSUS_TICK,
             payload={
-                "phase_tick": self.state['phase_tick']
+                "phase_tick": self.state.phase_tick
             },
-            message=f"Tick {self.state['tick']} — Phase {self.state['current_phase']} (Phase Tick {self.state['phase_tick']})"
+            message=f"Tick {self.state.tick} — Phase {self.state.current_phase} (Phase Tick {self.state.phase_tick})"
         ))
 
         # Phase complete: skip execution, advance phase
         current_phase = self.get_current_phase()
-        phase_ticks_expired = current_phase and self.state['phase_tick'] > current_phase.max_think_ticks
+        phase_ticks_expired = current_phase and self.state.phase_tick > current_phase.max_think_ticks
         
         if self.all_agents_ready and phase_ticks_expired:
             log_event(LogEntry(
-                tick=self.state['tick'],
-                phase=PhaseType(self.state['current_phase']) if self.state['current_phase'] else None,
+                tick=self.state.tick,
+                phase=PhaseType(self.state.current_phase) if self.state.current_phase else None,
                 event_type=EventType.PHASE_TRANSITION,
                 payload={
                     "current_phase_index": self.current_phase_index
@@ -443,13 +456,38 @@ class Consensus:
         else:
             # Execute phase logic
             if current_phase:
-                agents = list(self.rc.selected_agents.values())
-                # agent_proposal_ids should be set by the bureau
-                
-                self.state = current_phase.execute(self.state, agents)
+                agents = list(self.config.selected_agents.values())
+                if isinstance(current_phase, ProposePhase):
+                    current_phase.execute(self.state, agents, self.config, self.creditmgr)
+                else:
+                    current_phase.execute(self.state, agents, self.config)
 
-        # Record the state in the ledger
-        self.ledger.append(self.state.copy())
+        # Record the state in the execution ledger
+        self.state.execution_ledger.append({
+            "tick": self.state.tick,
+            "phase": self.state.current_phase,
+            "phase_tick": self.state.phase_tick,
+            "agent_readiness": self.state.agent_readiness.copy()
+        })
+        
+        # Save complete state snapshot to database
+        state_snapshot = self.state.serialize_for_snapshot()
+        save_state_snapshot(state_snapshot)
+        
+        # Log state snapshot event
+        log_event(LogEntry(
+            tick=self.state.tick,
+            phase=PhaseType(self.state.current_phase) if self.state.current_phase else None,
+            event_type=EventType.STATE_SNAPSHOT,
+            payload={
+                "phase_tick": self.state.phase_tick,
+                "agent_count": len(self.state.agent_balances),
+                "total_credits": sum(self.state.agent_balances.values()),
+                "snapshot_size": len(str(state_snapshot))
+            },
+            message=f"State snapshot saved for tick {self.state.tick}",
+            level=LogLevel.DEBUG
+        ))
 
 
 
@@ -462,21 +500,21 @@ class Consensus:
         return self.current_phase_index >= len(self.phases)
     
     def is_think_tick_over(self) -> bool:
-        current_tick = self.state["tick"]
-        start_tick = self.state["phase_start_tick"]
+        current_tick = self.state.tick
+        start_tick = self.state.phase_start_tick
         phase = self.get_current_phase()
         return (current_tick - start_tick) == phase.max_think_ticks
     
     def set_agent_ready(self, agent_id: str):
-        if agent_id in self.agent_ready:
-            self.agent_ready[agent_id] = True
+        if agent_id in self.state.agent_readiness:
+            self.state.agent_readiness[agent_id] = True
     
     def get_unready_agents(self) -> List[str]:
-        return [aid for aid, ready in self.agent_ready.items() if not ready]
+        return [aid for aid, ready in self.state.agent_readiness.items() if not ready]
     
     @property
     def all_agents_ready(self) -> bool:
-        return all(self.agent_ready.values())
+        return all(self.state.agent_readiness.values())
     
     def is_final_stake_round(self) -> bool:
         """Check if current phase is the final STAKE round."""
@@ -495,8 +533,8 @@ class Consensus:
         Finalize the consensus issue by determining the winning proposal
         based on conviction-weighted effective weights and emitting finalization events.
         """
-        issue_id = self.state.get("issue_id")
-        tick = self.state.get("tick")
+        issue_id = self.config.issue_id
+        tick = self.state.tick
         
         log_event(LogEntry(
             tick=tick,
@@ -553,13 +591,13 @@ class Consensus:
         ))
     
     def _aggregate_conviction_weights(self):
-        """Aggregate effective weights by proposal from CreditManager's conviction tracking."""
+        """Aggregate effective weights by proposal from shared state conviction tracking."""
         proposal_weights = {}
-        conviction_params = self.gc.conviction_params
+        conviction_params = self.config.conviction_params
         
         # Iterate through all agent conviction data
-        for agent_id in self.creditmgr.conviction_ledger:
-            for proposal_id, total_stake in self.creditmgr.conviction_ledger[agent_id].items():
+        for agent_id in self.state.conviction_ledger:
+            for proposal_id, total_stake in self.state.conviction_ledger[agent_id].items():
                 if total_stake > 0:  # Only include proposals with actual stakes
                     # Calculate effective weight using current conviction multiplier
                     multiplier = self.creditmgr.calculate_conviction_multiplier(
@@ -725,8 +763,8 @@ class Consensus:
     def _perform_finalization_cleanup(self, issue_id, tick):
         """Perform final cleanup tasks."""
         # Mark issue as finalized in state
-        self.state["issue_finalized"] = True
-        self.state["finalization_tick"] = tick
+        self.state.issue_finalized = True
+        self.state.finalization_tick = tick
         
         # Clear agent readiness flags
         self.agent_ready = {aid: False for aid in self.agent_ready}
@@ -872,9 +910,9 @@ class Consensus:
         
         return {
             "final_state": self.state,
-            "ledger": self.ledger,
+            "ledger": self.state.execution_ledger,
             "phases_executed": phase_summary,
-            "summary": f"Simulation completed in {self.state['tick']} ticks across {len(self.phases)} phases."
+            "summary": f"Roundtable completed in {self.state.tick} ticks across {len(self.phases)} phases."
         }
     
     

@@ -1,74 +1,89 @@
-from models import AgentPool, GlobalConfig, RunConfig, Issue, Proposal
+from models import AgentPool, GlobalConfig, RunConfig, UnifiedConfig, RoundtableState, Issue, Proposal
 from models import ACTION_QUEUE
 from roundtable import Consensus
 from creditmanager import CreditManager
 from typing import Optional
+from collections import defaultdict
 from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
 
 
 class TheBureau:
     def __init__(self, agent_pool: AgentPool):
         self.agent_pool = agent_pool
-        self.creditmgr = CreditManager({})  # Persistent ledger across runs
-        self.current_consensus = None
-        initial_balances = {
-            aid: agent.initial_balance for aid, agent in self.agent_pool.agents.items()
-        }
-        self.creditmgr = CreditManager(initial_balances=initial_balances)
-        self.current_issue: Optional[Issue] = None
-        self.proposals_this_phase: set = (
-            set()
-        )  # Track proposals submitted in current PROPOSE phase
-        self.assigned_agents: set = set()  # Track agents assigned to the current issue
-        self.proposal_counter = (
-            1  # Global proposal counter, starts at 1 (0 reserved for NoAction)
-        )
+        self.config: Optional[UnifiedConfig] = None
+        self.state: Optional[RoundtableState] = None
+        self.creditmgr: Optional[CreditManager] = None
+        self.current_consensus: Optional[Consensus] = None
 
     def register_issue(self, issue: Issue):
-        self.current_issue = issue
+        """Register an issue to be solved by the roundtable."""
+        if self.state:
+            self.state.current_issue = issue
+        else:
+            # Store temporarily until state is initialized
+            self._pending_issue = issue
 
     def get_next_proposal_id(self) -> int:
         """Get the next sequential proposal ID and increment counter."""
-        next_id = self.proposal_counter
-        self.proposal_counter += 1
+        if not self.state:
+            raise RuntimeError("Bureau state not initialized")
+        next_id = self.state.proposal_counter
+        self.state.proposal_counter += 1
         return next_id
 
     def get_issue(self, issue_id: str) -> Issue:
-        if self.current_issue and self.current_issue.issue_id == issue_id:
-            return self.current_issue
+        """Get the current issue being solved."""
+        if self.state and self.state.current_issue and self.state.current_issue.issue_id == issue_id:
+            return self.state.current_issue
         raise ValueError(f"Issue {issue_id} not found")
 
     def configure_consensus(
         self, global_config: GlobalConfig, run_config: RunConfig
     ) -> None:
-
+        """Configure the roundtable for consensus on the registered issue."""
+        
+        # Create unified config
+        self.config = UnifiedConfig.from_configs(global_config, run_config)
+        
+        # Preserve current issue from previous state if it exists
+        current_issue = None
+        if self.state and self.state.current_issue:
+            current_issue = self.state.current_issue
+        elif hasattr(self, '_pending_issue'):
+            current_issue = self._pending_issue
+            delattr(self, '_pending_issue')
+        
+        # Initialize roundtable state
+        self.state = RoundtableState(
+            agent_balances=self.config.get_initial_balances(),
+            agent_memory={aid: {} for aid in self.config.agent_ids},
+            agent_readiness={aid: False for aid in self.config.agent_ids},
+            agent_proposal_ids={aid: None for aid in self.config.agent_ids},
+            current_issue=current_issue
+        )
+        
         # Assign agents to current issue
-        if self.current_issue:
-            self.current_issue.agent_ids = run_config.agent_ids.copy()
+        if self.state.current_issue:
+            self.state.current_issue.agent_ids = self.config.agent_ids.copy()
 
-        self.assigned_agents = set(run_config.agent_ids)
-
-        # award all agents a credit
-        for agent_id in self.assigned_agents:
+        # Initialize credit manager with shared state
+        self.creditmgr = CreditManager(self.state)
+        
+        # Award all agents initial credits
+        for agent_id in self.config.agent_ids:
             self.creditmgr.credit(
                 agent_id=agent_id,
-                amount=global_config.assignment_award,
+                amount=self.config.assignment_award,
                 reason="Initial credit for consensus run",
                 tick=0,
-                issue_id=run_config.issue_id,
+                issue_id=self.config.issue_id,
             )
 
-        # Create and store the Consensus instance
-        consensus = Consensus(
-            global_config=global_config, run_config=run_config, creditmgr=self.creditmgr
-        )
-        consensus.state["creditmgr"] = self.creditmgr
-        consensus.state["config"] = global_config  # Pass full config for signal context
-        consensus.state["bureau"] = self  # Store bureau reference for proposal lookups
-        self.current_consensus = consensus
+        # Create and store the Consensus instance with shared config and state
+        self.current_consensus = Consensus(self.config, self.state, self.creditmgr)
 
         # Reset ready tracking for new consensus
-        self.proposals_this_phase.clear()
+        self.state.proposals_this_phase.clear()
 
     def run(self):
         """Run the consensus simulation until completion."""
@@ -77,16 +92,15 @@ class TheBureau:
         if not self.current_consensus:
             raise RuntimeError("No active consensus run.")
 
-        if not self.current_issue:
+        if not self.state or not self.state.current_issue:
             raise RuntimeError("No active issue registered.")
 
         consensus = self.current_consensus
-        consensus.state["issue_id"] = self.current_issue.issue_id
 
         while not consensus._is_complete():
-            tick= consensus.state["tick"]
+            tick = self.state.tick
             self._process_pending_actions()
-            phase= consensus.get_current_phase().phase_type
+            phase = consensus.get_current_phase().phase_type
 
 
             if phase=="Stake":
@@ -103,7 +117,7 @@ class TheBureau:
                         event_type=EventType.FINALIZATION_TRIGGER,
                         payload={
                             "issue_id": (
-                                self.current_issue.issue_id if self.current_issue else None
+                                self.state.current_issue.issue_id if self.state.current_issue else None
                             ),
                         },
                         message="Final STAKE round complete - triggering finalization"
@@ -117,10 +131,10 @@ class TheBureau:
                     event_type=EventType.PHASE_TIMEOUT,
                     payload={
                         "issue_id": (
-                            self.current_issue.issue_id if self.current_issue else None
+                            self.state.current_issue.issue_id if self.state.current_issue else None
                         ),
                     },
-                    message=f"Timeout {phase} Phase at tick {consensus.state['tick']}",
+                    message=f"Timeout {phase} Phase at tick {self.state.tick}",
                     level=LogLevel.WARNING
                 ))
                 
@@ -134,29 +148,50 @@ class TheBureau:
                         agent_id
                         for agent_id in all_agent_ids
                         if agent_id not in unready
-                        and not self.current_issue.is_assigned(agent_id)
+                        and not self.state.current_issue.is_assigned(agent_id)
                     ]
                     unstaked_agents = unready + unassigned_ready
 
                     if len(unstaked_agents) != 0:
-                        proposal = self.create_no_action_proposal(
-                            tick=tick,
-                            agent_id="system",
-                            issue_id=self.current_issue.issue_id,
+                        # Check if NoAction proposal already exists (should exist from phase start)
+                        noaction_proposal = next(
+                            (p for p in self.state.current_issue.proposals if p.proposal_id == 0),
+                            None
                         )
-                        self.current_issue.add_proposal(proposal)
-                        # link unstaked agent to no action proposal
+                        
+                        # If NoAction doesn't exist (shouldn't happen), create it
+                        if not noaction_proposal:
+                            noaction_proposal = self.create_no_action_proposal(
+                                tick=tick,
+                                agent_id="system",
+                                issue_id=self.state.current_issue.issue_id,
+                            )
+                            self.state.current_issue.add_proposal(noaction_proposal)
+                            log_event(LogEntry(
+                                tick=tick,
+                                phase=PhaseType(phase),
+                                event_type=EventType.PROPOSAL_RECEIVED,
+                                payload={
+                                    "proposal_id": noaction_proposal.proposal_id,
+                                    "agent_id": "system",
+                                    "issue_id": self.state.current_issue.issue_id,
+                                    "proposal_type": "noaction"
+                                },
+                                message=f"NoAction proposal #0 created on timeout for issue {self.state.current_issue.issue_id}"
+                            ))
+                        
+                        # Link unstaked agents to NoAction proposal
                         for agent_id in unstaked_agents:
                             self.creditmgr.stake_to_proposal(
                                 agent_id=agent_id,
-                                proposal_id=proposal.proposal_id,
-                                amount=self.current_consensus.gc.proposal_self_stake,
+                                proposal_id=noaction_proposal.proposal_id,
+                                amount=self.config.proposal_self_stake,
                                 tick=tick,
-                                issue_id=self.current_issue.issue_id,
+                                issue_id=self.state.current_issue.issue_id,
                             )
 
-                            self.current_issue.assign_agent_to_proposal(
-                                agent_id, proposal.proposal_id
+                            self.state.current_issue.assign_agent_to_proposal(
+                                agent_id, noaction_proposal.proposal_id
                             )
                             self.signal_ready(agent_id,payload={"reason": "no_action_proposal"})
                 else:
@@ -165,25 +200,52 @@ class TheBureau:
                         self.signal_ready(agent_id, payload={"reason": f"{phase.lower()}_timeout"})
 
             # Log phase transitions
-            if consensus.state["phase_tick"] == 1:
+            if self.state.phase_tick == 1:
                 log_event(LogEntry(
                     tick=tick,
                     phase=PhaseType(phase),
                     event_type=EventType.PHASE_TRANSITION,
                     payload={
-                        "phase_tick": consensus.state["phase_tick"],
+                        "phase_tick": self.state.phase_tick,
                         "issue_id": (
-                            self.current_issue.issue_id if self.current_issue else None
+                            self.state.current_issue.issue_id if self.state.current_issue else None
                         ),
                     },
                     message=f"Transitioned to new phase: {consensus.get_current_phase().phase_number}"
                 ))
-                logger.debug(f"Phase Tick: {consensus.state['phase_tick']}")
+                logger.debug(f"Phase Tick: {self.state.phase_tick}")
+                
+                # Create NoAction proposal at the start of PROPOSE phase
+                if phase == "PROPOSE" and self.state.current_issue:
+                    # Check if NoAction proposal already exists
+                    existing_noaction = next(
+                        (p for p in self.state.current_issue.proposals if p.proposal_id == 0),
+                        None
+                    )
+                    if not existing_noaction:
+                        noaction_proposal = self.create_no_action_proposal(
+                            tick=tick,
+                            agent_id="system",
+                            issue_id=self.state.current_issue.issue_id,
+                        )
+                        self.state.current_issue.add_proposal(noaction_proposal)
+                        log_event(LogEntry(
+                            tick=tick,
+                            phase=PhaseType(phase),
+                            event_type=EventType.PROPOSAL_RECEIVED,
+                            payload={
+                                "proposal_id": noaction_proposal.proposal_id,
+                                "agent_id": "system",
+                                "issue_id": self.state.current_issue.issue_id,
+                                "proposal_type": "noaction"
+                            },
+                            message=f"NoAction proposal #0 created for issue {self.state.current_issue.issue_id}"
+                        ))
 
             # Update consensus state with current agent proposal mappings
-            if self.current_issue:
-                consensus.state["agent_proposal_ids"] = dict(
-                    self.current_issue.agent_to_proposal_id
+            if self.state.current_issue:
+                self.state.agent_proposal_ids = dict(
+                    self.state.current_issue.agent_to_proposal_id
                 )
 
             log_event(LogEntry(
@@ -212,13 +274,13 @@ class TheBureau:
                 self.receive_stake(action.agent_id, action.payload)
 
     def receive_proposal(self, agent_id: str, proposal: Proposal):
-        tick = self.current_consensus.state["tick"] if self.current_consensus else 0
+        tick = self.state.tick if self.current_consensus else 0
         phase = (
-            self.current_consensus.state["current_phase"]
+            self.state.current_phase
             if self.current_consensus
             else None
         )
-        issue_id = self.current_issue.issue_id
+        issue_id = self.state.current_issue.issue_id
 
         # Assign sequential proposal ID
         new_proposal_id = self.get_next_proposal_id()
@@ -236,7 +298,7 @@ class TheBureau:
         ))
 
         # Validation 1: Check if there's an active issue
-        if not self.current_issue:
+        if not self.state.current_issue:
             log_event(LogEntry(
                 tick=tick,
                 phase=PhaseType(phase),
@@ -251,7 +313,7 @@ class TheBureau:
             return
 
         # Validation 2: Check if agent is assigned to the issue
-        if not self.current_issue.is_assigned(agent_id):
+        if not self.state.current_issue.is_assigned(agent_id):
             
             log_event(LogEntry(
                 tick=tick,
@@ -268,7 +330,7 @@ class TheBureau:
             return
 
         # Validation 3: Check if agent already submitted in current PROPOSE phase
-        if agent_id in self.proposals_this_phase:
+        if agent_id in self.state.proposals_this_phase:
             log_event(LogEntry(
                 tick=tick,
                 phase=PhaseType(phase),
@@ -283,7 +345,7 @@ class TheBureau:
             return
 
         # Validation 4: Check if proposal is for current issue
-        if proposal.issue_id != self.current_issue.issue_id:
+        if proposal.issue_id != self.state.current_issue.issue_id:
             log_event(LogEntry(
                 tick=tick,
                 phase=PhaseType(phase),
@@ -300,7 +362,7 @@ class TheBureau:
             return
 
         # check the agent has enough CP to stake
-        if not self.creditmgr.get_balance(agent_id) >= self.current_consensus.gc.proposal_self_stake:
+        if not self.creditmgr.get_balance(agent_id) >= self.config.proposal_self_stake:
             log_event(LogEntry(
                 tick=tick,
                 phase=PhaseType(phase),
@@ -324,11 +386,11 @@ class TheBureau:
         proposal.revision_number = 1
 
         # Store proposal in Issue
-        self.current_issue.add_proposal(proposal)
-        self.current_issue.assign_agent_to_proposal(agent_id, proposal.proposal_id)
+        self.state.current_issue.add_proposal(proposal)
+        self.state.current_issue.assign_agent_to_proposal(agent_id, proposal.proposal_id)
 
         # Update agent's latest_proposal_id
-        selected_agent = self.current_consensus.rc.selected_agents.get(agent_id)
+        selected_agent = self.config.selected_agents.get(agent_id)
         if selected_agent:
             selected_agent.latest_proposal_id = new_proposal_id
 
@@ -336,14 +398,14 @@ class TheBureau:
         stake_success = self.creditmgr.stake_to_proposal(
             agent_id=agent_id,
             proposal_id=proposal.proposal_id,
-            amount=self.current_consensus.gc.proposal_self_stake,
+            amount=self.config.proposal_self_stake,
             tick=tick,
             issue_id=issue_id,
         )
 
         # Mark agent as ready and track proposal submission
         self.signal_ready(agent_id,payload={"reason": "proposal_accepted"})
-        self.proposals_this_phase.add(agent_id)
+        self.state.proposals_this_phase.add(agent_id)
 
         log_event(LogEntry(
             tick=tick,
@@ -376,12 +438,12 @@ class TheBureau:
     def signal_ready(self, agent_id: str, payload: Optional[dict] = None):
         log_event(LogEntry(
             tick=(
-            self.current_consensus.state["tick"]
+            self.state.tick
             if self.current_consensus
             else 0
             ),
             phase=(
-            self.current_consensus.state["current_phase"]
+            self.state.current_phase
             if self.current_consensus
             else None
             ),
@@ -397,22 +459,22 @@ class TheBureau:
         comment = payload["comment"]
         tick = payload["tick"]
         phase = (
-            self.current_consensus.state["current_phase"]
+            self.state.current_phase
             if self.current_consensus
             else None
         )
         issue_id = payload["issue_id"]
 
-        if not self.current_issue or self.current_issue.issue_id != issue_id:
+        if not self.state.current_issue or self.state.current_issue.issue_id != issue_id:
             logger.warning(f"Rejected feedback from {agent_id}: wrong or missing issue")
             return
 
-        if not self.current_issue.is_assigned(agent_id):
+        if not self.state.current_issue.is_assigned(agent_id):
             logger.warning(f"Rejected feedback from {agent_id}: not assigned to issue")
             return
 
         # Prevent self-feedback
-        if self.current_issue.agent_to_proposal_id.get(agent_id) == target_pid:
+        if self.state.current_issue.agent_to_proposal_id.get(agent_id) == target_pid:
             logger.warning(
                 f"Rejected feedback from {agent_id}: cannot comment on own proposal"
             )
@@ -420,8 +482,8 @@ class TheBureau:
 
         # Feedback limit check
         if (
-            self.current_issue.count_feedbacks_by(agent_id)
-            >= self.current_consensus.gc.max_feedback_per_agent
+            self.state.current_issue.count_feedbacks_by(agent_id)
+            >= self.config.max_feedback_per_agent
         ):
             logger.warning(
                 f"Rejected feedback from {agent_id}: exceeded max feedback entries"
@@ -434,7 +496,7 @@ class TheBureau:
             return
 
         # check agenyt has enough CP to stake
-        if not self.creditmgr.get_balance(agent_id) >= self.current_consensus.gc.feedback_stake:
+        if not self.creditmgr.get_balance(agent_id) >= self.config.feedback_stake:
             log_event(LogEntry(
                 tick=tick,
                 phase=PhaseType(phase),
@@ -450,13 +512,13 @@ class TheBureau:
 
         # Deduct stake
         if not self.creditmgr.attempt_deduct(
-            agent_id, self.current_consensus.gc.feedback_stake, "Feedback Stake", tick, issue_id
+            agent_id, self.config.feedback_stake, "Feedback Stake", tick, issue_id
         ):
             logger.warning(f"Rejected feedback from {agent_id}: insufficient CP")
             return
 
         # Accept and record
-        self.current_issue.add_feedback(agent_id, target_pid, comment, tick)
+        self.state.current_issue.add_feedback(agent_id, target_pid, comment, tick)
         
         # TODO should they be readu if they can submit other feedback
         self.signal_ready(agent_id)
@@ -472,15 +534,15 @@ class TheBureau:
 
         # Look up agent's current proposal ID
         proposal_id = (
-            self.current_issue.agent_to_proposal_id.get(agent_id)
-            if self.current_issue
+            self.state.current_issue.agent_to_proposal_id.get(agent_id)
+            if self.state.current_issue
             else None
         )
 
         log_event(LogEntry(
             tick=tick,
             phase=(
-            self.current_consensus.state["current_phase"]
+            self.state.current_phase
             if self.current_consensus
             else None
             ),
@@ -499,7 +561,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -514,11 +576,11 @@ class TheBureau:
             return
 
         # Validation 2: Check if there's an active issue
-        if not self.current_issue or self.current_issue.issue_id != issue_id:
+        if not self.state.current_issue or self.state.current_issue.issue_id != issue_id:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -533,11 +595,11 @@ class TheBureau:
             return
 
         # Validation 2: Check if agent is assigned to the issue
-        if not self.current_issue.is_assigned(agent_id):
+        if not self.state.current_issue.is_assigned(agent_id):
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -556,7 +618,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -571,7 +633,7 @@ class TheBureau:
             return
 
         # Calculate CP cost: cost = proposal_self_stake * delta
-        cost = int(self.current_consensus.gc.proposal_self_stake * delta)
+        cost = int(self.config.proposal_self_stake * delta)
 
         # Attempt to deduct CP (with automatic unstaking if needed)
         deduct_success = self.creditmgr.attempt_deduct(
@@ -586,7 +648,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -603,7 +665,7 @@ class TheBureau:
 
         # Find the current active proposal to revise
         old_proposal = None
-        for proposal in self.current_issue.proposals:
+        for proposal in self.state.current_issue.proposals:
             if proposal.proposal_id == proposal_id and proposal.active:
                 old_proposal = proposal
                 break
@@ -612,7 +674,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -631,7 +693,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -678,13 +740,13 @@ class TheBureau:
         )
 
         # Add new proposal to issue
-        self.current_issue.proposals.append(new_proposal)
+        self.state.current_issue.proposals.append(new_proposal)
 
         # Update agent assignment to new version
-        self.current_issue.agent_to_proposal_id[agent_id] = new_proposal_id
+        self.state.current_issue.agent_to_proposal_id[agent_id] = new_proposal_id
 
         # Update agent's latest_proposal_id
-        selected_agent = self.current_consensus.rc.selected_agents.get(agent_id)
+        selected_agent = self.config.selected_agents.get(agent_id)
         if selected_agent:
             selected_agent.latest_proposal_id = new_proposal_id
 
@@ -700,7 +762,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -729,7 +791,7 @@ class TheBureau:
             "revision_number": new_revision_number,
             "cp_cost": cost,
         }
-        self.creditmgr.events.append(revision_event)
+        self.state.credit_events.append(revision_event)
 
         # Mark agent as ready
         self.signal_ready(agent_id, payload={"reason": "revision_accepted"})
@@ -737,7 +799,7 @@ class TheBureau:
         log_event(LogEntry(
             tick=tick,
             phase=(
-            self.current_consensus.state["current_phase"]
+            self.state.current_phase
             if self.current_consensus
             else None
             ),
@@ -766,7 +828,7 @@ class TheBureau:
         log_event(LogEntry(
             tick=tick,
             phase=(
-            self.current_consensus.state["current_phase"]
+            self.state.current_phase
             if self.current_consensus
             else None
             ),
@@ -782,11 +844,11 @@ class TheBureau:
         ))
 
         # Validation 1: Check if there's an active issue
-        if not self.current_issue or self.current_issue.issue_id != issue_id:
+        if not self.state.current_issue or self.state.current_issue.issue_id != issue_id:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -801,11 +863,11 @@ class TheBureau:
             return
 
         # Validation 2: Check if agent is assigned to the issue
-        if not self.current_issue.is_assigned(agent_id):
+        if not self.state.current_issue.is_assigned(agent_id):
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -824,7 +886,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -843,7 +905,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -858,8 +920,8 @@ class TheBureau:
             return
 
         # Validation 5: Check if agent is self-staking on their latest proposal
-        agent_current_proposal = self.current_issue.agent_to_proposal_id.get(agent_id)
-        selected_agent = self.current_consensus.rc.selected_agents.get(agent_id)
+        agent_current_proposal = self.state.current_issue.agent_to_proposal_id.get(agent_id)
+        selected_agent = self.config.selected_agents.get(agent_id)
 
         if (
             agent_current_proposal == proposal_id
@@ -869,7 +931,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -898,7 +960,7 @@ class TheBureau:
             # Get conviction parameters from current consensus
             conviction_params = {}
             if self.current_consensus:
-                conviction_params = self.current_consensus.gc.conviction_params
+                conviction_params = self.config.conviction_params
 
             # Update conviction tracking and get conviction details
             conviction_details = self.creditmgr.update_conviction(
@@ -914,7 +976,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
@@ -944,7 +1006,7 @@ class TheBureau:
             log_event(LogEntry(
                 tick=tick,
                 phase=(
-                    self.current_consensus.state["current_phase"]
+                    self.state.current_phase
                     if self.current_consensus
                     else None
                 ),
