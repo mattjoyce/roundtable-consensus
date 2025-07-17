@@ -156,24 +156,42 @@ class FeedbackPhase(Phase):
         self.cycle_number = cycle_number
         self.feedback_stake = feedback_stake
         self.max_feedback_per_agent = max_feedback_per_agent
+        self.feedback_stats = {}
     
-    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+    def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Initialize feedback phase tracking and log phase start."""
+        self.feedback_stats = {
+            "feedbacks_submitted": 0,
+            "agents_participated": set(),
+            "target_proposals": set()
+        }
+        
         log_event(LogEntry(
             tick=state.tick,
             phase=PhaseType.FEEDBACK,
-            event_type=EventType.PHASE_EXECUTION,
+            event_type=EventType.PHASE_TRANSITION,
             payload={
                 "phase_number": self.phase_number,
                 "cycle_number": self.cycle_number,
-                "max_feedback_per_agent": self.max_feedback_per_agent
+                "max_feedback_per_agent": self.max_feedback_per_agent,
+                "feedback_stake": self.feedback_stake
             },
-            message=f"Executing Feedback Phase [{self.phase_number}] for cycle {self.cycle_number} with max feedback per agent {self.max_feedback_per_agent}"
+            message=f"Starting Feedback Phase [{self.phase_number}] for cycle {self.cycle_number}"
         ))
-        
+    
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+        """Signal agents to provide feedback and check for completion."""
         for agent in agents:
             # Get all available proposals for agent decision making
             all_proposals = list(state.agent_proposal_ids.values())
             current_proposal_id = state.agent_proposal_ids.get(agent.agent_id)
+            
+            # Check if agent has reached max feedback and mark ready if so
+            if state.current_issue:
+                feedback_count = state.current_issue.count_feedbacks_by(agent.agent_id)
+                if feedback_count >= self.max_feedback_per_agent:
+                    self.signal_ready(agent.agent_id, state)
+                    continue
             
             agent.on_signal({
                 "type": "Feedback",
@@ -185,7 +203,41 @@ class FeedbackPhase(Phase):
                 "current_proposal_id": current_proposal_id
             })
     
+    def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Complete feedback phase - force all agents ready on timeout."""
+        # Calculate feedback stats from actual state
+        total_feedbacks = 0
+        agents_with_feedback = set()
+        target_proposals = set()
+        
+        if state.current_issue:
+            for feedback_list in state.current_issue.feedback.values():
+                total_feedbacks += len(feedback_list)
+                for feedback in feedback_list:
+                    agents_with_feedback.add(feedback["agent_id"])
+                    target_proposals.add(feedback["target_proposal_id"])
+        
+        # Force all agents ready on phase timeout
+        for agent_id in config.agent_ids:
+            self.signal_ready(agent_id, state)
+        
+        log_event(LogEntry(
+            tick=state.tick,
+            phase=PhaseType.FEEDBACK,
+            event_type=EventType.PHASE_COMPLETION,
+            payload={
+                "phase_number": self.phase_number,
+                "cycle_number": self.cycle_number,
+                "feedbacks_submitted": total_feedbacks,
+                "agents_participated": len(agents_with_feedback),
+                "target_proposals": len(target_proposals)
+            },
+            message=f"Completed Feedback Phase [{self.phase_number}]: {total_feedbacks} feedbacks from {len(agents_with_feedback)} agents (timeout)"
+        ))
+    
+    
     def is_complete(self, state: RoundtableState) -> bool:
+        """Check if feedback phase is complete."""
         return True
 
 class RevisePhase(Phase):

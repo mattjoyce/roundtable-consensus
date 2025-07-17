@@ -455,14 +455,11 @@ class TheBureau:
         self.current_consensus.set_agent_ready(agent_id)
 
     def receive_feedback(self, agent_id: str, payload: dict):
+        """Process feedback submission with comprehensive validation."""
         target_pid = payload["target_proposal_id"]
         comment = payload["comment"]
         tick = payload["tick"]
-        phase = (
-            self.state.current_phase
-            if self.current_consensus
-            else None
-        )
+        phase = self.state.current_phase if self.state else None
         issue_id = payload["issue_id"]
 
         if not self.state.current_issue or self.state.current_issue.issue_id != issue_id:
@@ -495,7 +492,7 @@ class TheBureau:
             logger.warning(f"Rejected feedback from {agent_id}: comment too long")
             return
 
-        # check agenyt has enough CP to stake
+        # Check agent has enough CP to stake
         if not self.creditmgr.get_balance(agent_id) >= self.config.feedback_stake:
             log_event(LogEntry(
                 tick=tick,
@@ -504,6 +501,7 @@ class TheBureau:
                 agent_id=agent_id,
                 payload={
                     "reason": "insufficient_cp_for_stake",
+                    "target_proposal_id": target_pid,
                 },
                 message=f"Rejected feedback from {agent_id}: Not enough CP to stake",
                 level=LogLevel.WARNING
