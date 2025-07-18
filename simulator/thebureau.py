@@ -99,107 +99,9 @@ class TheBureau:
 
         while not consensus._is_complete():
             tick = self.state.tick
-            self._process_pending_actions()
             phase = consensus.get_current_phase().phase_type
 
-
-            if phase=="Stake":
-                # Check if we should trigger finalization after final STAKE round
-                if (
-                    # TODO: fix
-                    consensus.is_final_stake_round()
-                    and consensus.all_agents_ready
-                    and not consensus.state.get("issue_finalized", False)
-                ):
-                    log_event(LogEntry(
-                        tick=tick,
-                        phase=PhaseType(phase),
-                        event_type=EventType.FINALIZATION_TRIGGER,
-                        payload={
-                            "issue_id": (
-                                self.state.current_issue.issue_id if self.state.current_issue else None
-                            ),
-                        },
-                        message="Final STAKE round complete - triggering finalization"
-                    ))
-                    consensus.finalize_issue()
-
-            if consensus.is_think_tick_over():
-                log_event(LogEntry(
-                    tick=tick,
-                    phase=PhaseType(phase),
-                    event_type=EventType.PHASE_TIMEOUT,
-                    payload={
-                        "issue_id": (
-                            self.state.current_issue.issue_id if self.state.current_issue else None
-                        ),
-                    },
-                    message=f"Timeout {phase} Phase at tick {self.state.tick}",
-                    level=LogLevel.WARNING
-                ))
-                
-                # Handle unready agents on timeout for all phases
-                unready = self.current_consensus.get_unready_agents()
-                
-                if phase == "PROPOSE":
-                    # For PROPOSE phase, also include ready agents who don't have stakes assigned
-                    all_agent_ids = set(self.creditmgr.get_all_balances().keys())
-                    unassigned_ready = [
-                        agent_id
-                        for agent_id in all_agent_ids
-                        if agent_id not in unready
-                        and not self.state.current_issue.is_assigned(agent_id)
-                    ]
-                    unstaked_agents = unready + unassigned_ready
-
-                    if len(unstaked_agents) != 0:
-                        # Check if NoAction proposal already exists (should exist from phase start)
-                        noaction_proposal = next(
-                            (p for p in self.state.current_issue.proposals if p.proposal_id == 0),
-                            None
-                        )
-                        
-                        # If NoAction doesn't exist (shouldn't happen), create it
-                        if not noaction_proposal:
-                            noaction_proposal = self.create_no_action_proposal(
-                                tick=tick,
-                                agent_id="system",
-                                issue_id=self.state.current_issue.issue_id,
-                            )
-                            self.state.current_issue.add_proposal(noaction_proposal)
-                            log_event(LogEntry(
-                                tick=tick,
-                                phase=PhaseType(phase),
-                                event_type=EventType.PROPOSAL_RECEIVED,
-                                payload={
-                                    "proposal_id": noaction_proposal.proposal_id,
-                                    "agent_id": "system",
-                                    "issue_id": self.state.current_issue.issue_id,
-                                    "proposal_type": "noaction"
-                                },
-                                message=f"NoAction proposal #0 created on timeout for issue {self.state.current_issue.issue_id}"
-                            ))
-                        
-                        # Link unstaked agents to NoAction proposal
-                        for agent_id in unstaked_agents:
-                            self.creditmgr.stake_to_proposal(
-                                agent_id=agent_id,
-                                proposal_id=noaction_proposal.proposal_id,
-                                amount=self.config.proposal_self_stake,
-                                tick=tick,
-                                issue_id=self.state.current_issue.issue_id,
-                            )
-
-                            self.state.current_issue.assign_agent_to_proposal(
-                                agent_id, noaction_proposal.proposal_id
-                            )
-                            self.signal_ready(agent_id,payload={"reason": "no_action_proposal"})
-                else:
-                    # For all other phases, just mark unready agents as ready
-                    for agent_id in unready:
-                        self.signal_ready(agent_id, payload={"reason": f"{phase.lower()}_timeout"})
-
-            # Log phase transitions
+            # Log phase transitions BEFORE processing actions
             if self.state.phase_tick == 1:
                 log_event(LogEntry(
                     tick=tick,
@@ -214,33 +116,11 @@ class TheBureau:
                     message=f"Transitioned to new phase: {consensus.get_current_phase().phase_number}"
                 ))
                 logger.debug(f"Phase Tick: {self.state.phase_tick}")
-                
-                # Create NoAction proposal at the start of PROPOSE phase
-                if phase == "PROPOSE" and self.state.current_issue:
-                    # Check if NoAction proposal already exists
-                    existing_noaction = next(
-                        (p for p in self.state.current_issue.proposals if p.proposal_id == 0),
-                        None
-                    )
-                    if not existing_noaction:
-                        noaction_proposal = self.create_no_action_proposal(
-                            tick=tick,
-                            agent_id="system",
-                            issue_id=self.state.current_issue.issue_id,
-                        )
-                        self.state.current_issue.add_proposal(noaction_proposal)
-                        log_event(LogEntry(
-                            tick=tick,
-                            phase=PhaseType(phase),
-                            event_type=EventType.PROPOSAL_RECEIVED,
-                            payload={
-                                "proposal_id": noaction_proposal.proposal_id,
-                                "agent_id": "system",
-                                "issue_id": self.state.current_issue.issue_id,
-                                "proposal_type": "noaction"
-                            },
-                            message=f"NoAction proposal #0 created for issue {self.state.current_issue.issue_id}"
-                        ))
+
+            self._process_pending_actions()
+
+
+
 
             # Update consensus state with current agent proposal mappings
             if self.state.current_issue:

@@ -41,6 +41,8 @@ class EventType(str, Enum):
     # Consensus Engine
     PHASE_EXECUTION = "phase_execution"
     PHASE_TRANSITION = "phase_transition"
+    PHASE_BEGIN = "phase_begin"
+    PHASE_FINISH = "phase_finish"
     CONSENSUS_TICK = "consensus_tick"
     PROPOSAL_STAKE_TRANSFERRED = "proposal_stake_transferred"
     
@@ -74,6 +76,9 @@ class EventType(str, Enum):
     # Agent Actions
     AGENT_READY = "agent_ready"
     PHASE_TIMEOUT = "phase_timeout"
+    
+    # State Snapshots
+    STATE_SNAPSHOT = "state_snapshot"
 
 
 class PhaseType(str, Enum):
@@ -127,6 +132,29 @@ class SQLiteSink:
                 payload TEXT
             )
         """)
+        
+        # Create state snapshots table
+        self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS state_snapshots (
+                id INTEGER PRIMARY KEY,
+                tick INTEGER NOT NULL,
+                phase TEXT,
+                phase_tick INTEGER,
+                agent_balances TEXT,
+                agent_readiness TEXT,
+                agent_proposal_ids TEXT,
+                conviction_ledger TEXT,
+                conviction_rounds TEXT,
+                conviction_rounds_held TEXT,
+                stake_ledger TEXT,
+                credit_events TEXT,
+                execution_ledger TEXT,
+                proposal_counter INTEGER,
+                issue_finalized BOOLEAN,
+                finalization_tick INTEGER,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         self.connection.commit()
     
     def write(self, message):
@@ -147,6 +175,35 @@ class SQLiteSink:
             event_dict.get("event_type"),
             record["message"],
             json.dumps(event_dict.get("payload")) if event_dict.get("payload") else None
+        ))
+        self.connection.commit()
+    
+    def save_state_snapshot(self, state_data: dict):
+        """Save a complete state snapshot to the database."""
+        self.connection.execute("""
+            INSERT INTO state_snapshots (
+                tick, phase, phase_tick, agent_balances, agent_readiness,
+                agent_proposal_ids, conviction_ledger, conviction_rounds,
+                conviction_rounds_held, stake_ledger, credit_events,
+                execution_ledger, proposal_counter, issue_finalized,
+                finalization_tick
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            state_data["tick"],
+            state_data["phase"],
+            state_data["phase_tick"],
+            state_data["agent_balances"],
+            state_data["agent_readiness"],
+            state_data["agent_proposal_ids"],
+            state_data["conviction_ledger"],
+            state_data["conviction_rounds"],
+            state_data["conviction_rounds_held"],
+            state_data["stake_ledger"],
+            state_data["credit_events"],
+            state_data["execution_ledger"],
+            state_data["proposal_counter"],
+            state_data["issue_finalized"],
+            state_data["finalization_tick"]
         ))
         self.connection.commit()
     
@@ -233,7 +290,9 @@ def setup_logging(sim_id: str, verbosity: int) -> SimulationLogger:
     Returns:
         SimulationLogger instance for cleanup
     """
-    return SimulationLogger(sim_id, verbosity)
+    global _current_sim_logger
+    _current_sim_logger = SimulationLogger(sim_id, verbosity)
+    return _current_sim_logger
 
 
 def generate_sim_id() -> str:
@@ -268,6 +327,9 @@ def generate_sim_id() -> str:
     next_suffix = max(suffixes) + 1 if suffixes else 1
     return f"{base_id}-{next_suffix}"
 
+
+# Global reference to current simulation logger
+_current_sim_logger: Optional[SimulationLogger] = None
 
 def log_event(entry: LogEntry, forensic: bool = True):
     """
@@ -311,3 +373,9 @@ def log_event(entry: LogEntry, forensic: bool = True):
             logger.opt(depth=1).error(entry.message)
         else:
             logger.opt(depth=1).info(entry.message)
+
+def save_state_snapshot(state_data: dict):
+    """Save a state snapshot using the current simulation logger."""
+    global _current_sim_logger
+    if _current_sim_logger and _current_sim_logger.sqlite_sink:
+        _current_sim_logger.sqlite_sink.save_state_snapshot(state_data)

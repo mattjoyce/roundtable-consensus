@@ -240,7 +240,7 @@ def main():
                     "scenario": i + 1,
                     "issue_id": issue.issue_id,
                     "phases_executed": len(result["phases_executed"]),
-                    "final_tick": result.get("final_state", {}).get("tick", 0),
+                    "final_tick": result.get("final_state").tick if result.get("final_state") else 0,
                     "round_duration_ms": round(round_duration * 1000, 2)
                 },
                 message=f"Scenario {i + 1} completed in {round_duration:.3f}s"

@@ -4,35 +4,29 @@ import math
 
 
 class CreditManager:
-    def __init__(self, initial_balances: dict):
-        # Map agent_id -> current CP balance
-        self.balances = dict(initial_balances)  # Make a copy
-        self.events = []  # Burn / Transfer / Rejection logs
-        self.stake_ledger = []  # List of stake records: {proposal_id, amount, staked_by, round, tick, issue_id, stake_type}
-        
-        # Conviction tracking structures
-        self.conviction_ledger = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> accumulated stake
-        self.conviction_rounds = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> consecutive rounds
-        self.conviction_rounds_held = defaultdict(lambda: defaultdict(int))  # agent_id -> proposal_id -> total rounds ever held
+    """Stateless service class for managing credits and conviction on shared RoundtableState."""
+    
+    def __init__(self, state):
+        self.state = state
         
         # Log credit manager initialization
         log_event(LogEntry(
             event_type=EventType.CREDIT_MANAGER_INIT,
             payload={
-                "initial_balances": initial_balances,
-                "total_agents": len(initial_balances),
-                "total_credits": sum(initial_balances.values())
+                "initial_balances": state.agent_balances,
+                "total_agents": len(state.agent_balances),
+                "total_credits": sum(state.agent_balances.values())
             },
-            message=f"CreditManager initialized with {len(initial_balances)} agents and {sum(initial_balances.values())} total credits",
+            message=f"CreditManager initialized with {len(state.agent_balances)} agents and {sum(state.agent_balances.values())} total credits",
             level=LogLevel.DEBUG
         ))
 
     def get_balance(self, agent_id: str) -> int:
-        return self.balances.get(agent_id, 0)
+        return self.state.agent_balances.get(agent_id, 0)
 
     def attempt_deduct(self, agent_id: str, amount: int, reason: str, tick: int, issue_id: str) -> bool:
         if self.get_balance(agent_id) >= amount:
-            self.balances[agent_id] -= amount
+            self.state.agent_balances[agent_id] -= amount
             event_data = {
                 "type": "Burn",
                 "agent_id": agent_id,
@@ -41,7 +35,7 @@ class CreditManager:
                 "tick": tick,
                 "issue_id": issue_id
             }
-            self.events.append(event_data)
+            self.state.credit_events.append(event_data)
             
             # Log the credit burn event
             log_event(LogEntry(
@@ -52,7 +46,7 @@ class CreditManager:
                     "amount": amount,
                     "reason": reason,
                     "issue_id": issue_id,
-                    "new_balance": self.balances[agent_id]
+                    "new_balance": self.state.agent_balances[agent_id]
                 },
                 message=f"Credit burned: {agent_id} -{amount} CP ({reason})"
             ))
@@ -67,7 +61,7 @@ class CreditManager:
                 "tick": tick,
                 "issue_id": issue_id
             }
-            self.events.append(event_data)
+            self.state.credit_events.append(event_data)
             
             # Log the insufficient credit event
             log_event(LogEntry(
@@ -88,7 +82,7 @@ class CreditManager:
 
     def credit(self, agent_id: str, amount: int, reason: str, tick: int, issue_id: str):
         old_balance = self.get_balance(agent_id)
-        self.balances[agent_id] = old_balance + amount
+        self.state.agent_balances[agent_id] = old_balance + amount
         
         event_data = {
             "type": "Credit",
@@ -98,7 +92,7 @@ class CreditManager:
             "tick": tick,
             "issue_id": issue_id
         }
-        self.events.append(event_data)
+        self.state.credit_events.append(event_data)
         
         # Log the credit award event
         log_event(LogEntry(
@@ -110,16 +104,16 @@ class CreditManager:
                 "reason": reason,
                 "issue_id": issue_id,
                 "old_balance": old_balance,
-                "new_balance": self.balances[agent_id]
+                "new_balance": self.state.agent_balances[agent_id]
             },
             message=f"Credit awarded: {agent_id} +{amount} CP ({reason})"
         ))
 
     def get_all_balances(self) -> dict:
-        return dict(self.balances)
+        return dict(self.state.agent_balances)
 
     def get_events(self) -> list:
-        return list(self.events)
+        return list(self.state.credit_events)
 
     def stake_to_proposal(self, agent_id: str, proposal_id: str, amount: int, tick: int, issue_id: str) -> bool:
         if self.attempt_deduct(agent_id, amount, "Proposal Self Stake", tick, issue_id):
@@ -133,7 +127,7 @@ class CreditManager:
                 "issue_id": issue_id,
                 "stake_type": "initial"
             }
-            self.stake_ledger.append(stake_record)
+            self.state.stake_ledger.append(stake_record)
             
             log_event(LogEntry(
                 tick=tick,
@@ -153,7 +147,7 @@ class CreditManager:
     def transfer_stake(self, old_proposal_id: str, new_proposal_id: str, tick: int, issue_id: str) -> bool:
         """Transfer stake from old proposal to new proposal (for versioned revisions)."""
         # Find all stakes for the old proposal
-        old_stakes = [record for record in self.stake_ledger if record["proposal_id"] == old_proposal_id]
+        old_stakes = [record for record in self.state.stake_ledger if record["proposal_id"] == old_proposal_id]
         
         if old_stakes:
             # Update each stake record to point to new proposal
@@ -179,14 +173,14 @@ class CreditManager:
 
     def get_agent_stakes(self, agent_id: str, issue_id: str = None) -> list:
         """Get all stakes by a specific agent."""
-        stakes = [record for record in self.stake_ledger if record["staked_by"] == agent_id]
+        stakes = [record for record in self.state.stake_ledger if record["staked_by"] == agent_id]
         if issue_id:
             stakes = [record for record in stakes if record["issue_id"] == issue_id]
         return stakes
     
     def get_proposal_stakes(self, proposal_id: str, issue_id: str = None) -> list:
         """Get all stakes to a specific proposal."""
-        stakes = [record for record in self.stake_ledger if record["proposal_id"] == proposal_id]
+        stakes = [record for record in self.state.stake_ledger if record["proposal_id"] == proposal_id]
         if issue_id:
             stakes = [record for record in stakes if record["issue_id"] == issue_id]
         return stakes
@@ -198,7 +192,7 @@ class CreditManager:
     
     def get_agent_stake_on_proposal(self, agent_id: str, proposal_id: str, issue_id: str = None) -> int:
         """Get the total amount a specific agent has staked on a specific proposal."""
-        stakes = [record for record in self.stake_ledger 
+        stakes = [record for record in self.state.stake_ledger 
                  if record["staked_by"] == agent_id and record["proposal_id"] == proposal_id]
         if issue_id:
             stakes = [record for record in stakes if record["issue_id"] == issue_id]
@@ -206,7 +200,7 @@ class CreditManager:
 
     def calculate_conviction_multiplier(self, agent_id: str, proposal_id: str, conviction_params: dict) -> float:
         """Calculate conviction multiplier based on consecutive rounds and conviction parameters."""
-        consecutive_rounds = self.conviction_rounds[agent_id][proposal_id]
+        consecutive_rounds = self.state.conviction_rounds[agent_id][proposal_id]
         
         # Support both exponential and linear conviction calculation modes
         if "MaxMultiplier" in conviction_params and "TargetFraction" in conviction_params:
@@ -234,12 +228,12 @@ class CreditManager:
     
     def get_agent_conviction_on_proposal(self, agent_id: str, proposal_id: str) -> int:
         """Get the accumulated conviction stake for an agent on a specific proposal."""
-        return self.conviction_ledger[agent_id][proposal_id]
+        return self.state.conviction_ledger[agent_id][proposal_id]
     
     def get_agent_current_proposal(self, agent_id: str) -> str:
         """Get the proposal the agent is currently supporting (if any)."""
-        for proposal_id in self.conviction_ledger[agent_id]:
-            if self.conviction_rounds[agent_id][proposal_id] > 0:
+        for proposal_id in self.state.conviction_ledger[agent_id]:
+            if self.state.conviction_rounds[agent_id][proposal_id] > 0:
                 return proposal_id
         return None
     
@@ -252,7 +246,7 @@ class CreditManager:
         
         if is_switching:
             # Reset conviction on previous proposal but preserve rounds_held history
-            self.conviction_rounds[agent_id][current_proposal] = 0
+            self.state.conviction_rounds[agent_id][current_proposal] = 0
             log_event(LogEntry(
                 tick=tick,
                 event_type=EventType.CONVICTION_SWITCHED,
@@ -262,21 +256,21 @@ class CreditManager:
                     "to_proposal_id": proposal_id,
                     "stake_amount": stake_amount,
                     "issue_id": issue_id,
-                    "previous_rounds_held": self.conviction_rounds_held[agent_id][current_proposal]
+                    "previous_rounds_held": self.state.conviction_rounds_held[agent_id][current_proposal]
                 },
                 message=f"Agent {agent_id} switched conviction from {current_proposal} to {proposal_id}"
             ))
         
         # Update conviction tracking
-        self.conviction_ledger[agent_id][proposal_id] += stake_amount
-        self.conviction_rounds[agent_id][proposal_id] += 1
-        self.conviction_rounds_held[agent_id][proposal_id] += 1  # Always increment total rounds held
+        self.state.conviction_ledger[agent_id][proposal_id] += stake_amount
+        self.state.conviction_rounds[agent_id][proposal_id] += 1
+        self.state.conviction_rounds_held[agent_id][proposal_id] += 1  # Always increment total rounds held
         
         # Calculate conviction multiplier
         multiplier = self.calculate_conviction_multiplier(agent_id, proposal_id, conviction_params)
         effective_weight = round(stake_amount * multiplier, 2)
-        total_conviction = self.conviction_ledger[agent_id][proposal_id]
-        consecutive_rounds = self.conviction_rounds[agent_id][proposal_id]
+        total_conviction = self.state.conviction_ledger[agent_id][proposal_id]
+        consecutive_rounds = self.state.conviction_rounds[agent_id][proposal_id]
         
         # Log conviction update event with structured payload
         log_event(LogEntry(
@@ -291,7 +285,7 @@ class CreditManager:
                 "total_conviction": total_conviction,
                 "consecutive_rounds": consecutive_rounds,
                 "issue_id": issue_id,
-                "rounds_held": self.conviction_rounds_held[agent_id][proposal_id]
+                "rounds_held": self.state.conviction_rounds_held[agent_id][proposal_id]
             },
             message=f"Conviction updated: {agent_id} → {proposal_id}: {stake_amount}CP × {multiplier} = {effective_weight} effective weight"
         ))

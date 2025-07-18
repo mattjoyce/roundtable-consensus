@@ -207,6 +207,157 @@ sqlite3 db/FILENAME.sqlite3 "SELECT COUNT(*) FROM events;"
 sqlite3 -header -csv db/FILENAME.sqlite3 "SELECT * FROM events;" > export.csv
 ```
 
+## Agent Credit Balance Tracking
+
+### Credit Balance Over Time (Cumulative)
+
+```sql
+-- Agent credit balances over time with cumulative tracking
+WITH credit_changes AS (
+    SELECT 
+        agent_id,
+        tick,
+        phase,
+        event_type,
+        CASE 
+            WHEN event_type = 'credit_award' THEN 
+                CAST(SUBSTR(message, INSTR(message, '+') + 1, INSTR(message, ' CP') - INSTR(message, '+') - 1) AS INTEGER)
+            WHEN event_type = 'credit_burn' THEN 
+                -CAST(SUBSTR(message, INSTR(message, '-') + 1, INSTR(message, ' CP') - INSTR(message, '-') - 1) AS INTEGER)
+            ELSE 0
+        END as balance_change,
+        id
+    FROM events 
+    WHERE event_type IN ('credit_award', 'credit_burn')
+),
+running_balances AS (
+    SELECT 
+        agent_id,
+        tick,
+        phase,
+        event_type,
+        balance_change,
+        SUM(balance_change) OVER (
+            PARTITION BY agent_id 
+            ORDER BY id 
+            ROWS UNBOUNDED PRECEDING
+        ) as cumulative_balance,
+        id
+    FROM credit_changes
+)
+SELECT 
+    agent_id,
+    tick,
+    phase,
+    cumulative_balance as current_cp
+FROM running_balances
+ORDER BY agent_id, tick, id;
+
+-- Simplified balance snapshot by tick
+WITH credit_changes AS (
+    SELECT 
+        agent_id,
+        tick,
+        CASE 
+            WHEN event_type = 'credit_award' THEN 
+                CAST(SUBSTR(message, INSTR(message, '+') + 1, INSTR(message, ' CP') - INSTR(message, '+') - 1) AS INTEGER)
+            WHEN event_type = 'credit_burn' THEN 
+                -CAST(SUBSTR(message, INSTR(message, '-') + 1, INSTR(message, ' CP') - INSTR(message, '-') - 1) AS INTEGER)
+            ELSE 0
+        END as balance_change,
+        id
+    FROM events 
+    WHERE event_type IN ('credit_award', 'credit_burn')
+),
+running_balances AS (
+    SELECT 
+        agent_id,
+        tick,
+        SUM(balance_change) OVER (
+            PARTITION BY agent_id 
+            ORDER BY id 
+            ROWS UNBOUNDED PRECEDING
+        ) as cumulative_balance,
+        ROW_NUMBER() OVER (PARTITION BY agent_id, tick ORDER BY id DESC) as rn
+    FROM credit_changes
+)
+SELECT 
+    agent_id,
+    tick,
+    cumulative_balance as cp_balance
+FROM running_balances
+WHERE rn = 1  -- Last balance update per agent per tick
+ORDER BY tick, agent_id;
+```
+
+### Balance Matrix: Agents as Columns, Ticks as Rows
+
+```sql
+-- Create a pivot table showing agent balances by tick
+WITH credit_changes AS (
+    SELECT 
+        agent_id,
+        tick,
+        CASE 
+            WHEN event_type = 'credit_award' THEN 
+                CAST(SUBSTR(message, INSTR(message, '+') + 1, INSTR(message, ' CP') - INSTR(message, '+') - 1) AS INTEGER)
+            WHEN event_type = 'credit_burn' THEN 
+                -CAST(SUBSTR(message, INSTR(message, '-') + 1, INSTR(message, ' CP') - INSTR(message, '-') - 1) AS INTEGER)
+            ELSE 0
+        END as balance_change,
+        id
+    FROM events 
+    WHERE event_type IN ('credit_award', 'credit_burn')
+),
+running_balances AS (
+    SELECT 
+        agent_id,
+        tick,
+        SUM(balance_change) OVER (
+            PARTITION BY agent_id 
+            ORDER BY id 
+            ROWS UNBOUNDED PRECEDING
+        ) as cumulative_balance,
+        ROW_NUMBER() OVER (PARTITION BY agent_id, tick ORDER BY id DESC) as rn
+    FROM credit_changes
+),
+final_balances AS (
+    SELECT 
+        agent_id,
+        tick,
+        cumulative_balance
+    FROM running_balances
+    WHERE rn = 1
+),
+all_ticks AS (
+    SELECT DISTINCT tick FROM events WHERE tick IS NOT NULL ORDER BY tick
+),
+all_agents AS (
+    SELECT DISTINCT agent_id FROM final_balances ORDER BY agent_id
+),
+balance_matrix AS (
+    SELECT 
+        t.tick,
+        a.agent_id,
+        COALESCE(fb.cumulative_balance, 
+                 LAG(fb.cumulative_balance) OVER (PARTITION BY a.agent_id ORDER BY t.tick),
+                 0) as balance
+    FROM all_ticks t
+    CROSS JOIN all_agents a
+    LEFT JOIN final_balances fb ON t.tick = fb.tick AND a.agent_id = fb.agent_id
+)
+SELECT 
+    tick,
+    SUM(CASE WHEN agent_id = 'Agent_Diplomat_7' THEN balance END) as Agent_Diplomat_7,
+    SUM(CASE WHEN agent_id = 'Agent_Leader_6' THEN balance END) as Agent_Leader_6,
+    SUM(CASE WHEN agent_id = 'Agent_Maverick_1' THEN balance END) as Agent_Maverick_1,
+    SUM(CASE WHEN agent_id = 'Agent_Opportunist_7' THEN balance END) as Agent_Opportunist_7,
+    SUM(CASE WHEN agent_id = 'Agent_Opportunist_5' THEN balance END) as Agent_Opportunist_5
+FROM balance_matrix
+GROUP BY tick
+ORDER BY tick;
+```
+
 ## Analysis Examples
 
 ### Sprint Validation: Proposal Staking
