@@ -240,31 +240,17 @@ class CreditManager:
     def update_conviction(self, agent_id: str, proposal_id: str, stake_amount: int, 
                          conviction_params: dict, tick: int, issue_id: str) -> dict:
         """Update conviction tracking and return conviction details."""
-        # Check if agent is switching from another proposal
-        current_proposal = self.get_agent_current_proposal(agent_id)
-        is_switching = current_proposal is not None and current_proposal != proposal_id
-        
-        if is_switching:
-            # Reset conviction on previous proposal but preserve rounds_held history
-            self.state.conviction_rounds[agent_id][current_proposal] = 0
-            log_event(LogEntry(
-                tick=tick,
-                event_type=EventType.CONVICTION_SWITCHED,
-                agent_id=agent_id,
-                payload={
-                    "from_proposal_id": current_proposal,
-                    "to_proposal_id": proposal_id,
-                    "stake_amount": stake_amount,
-                    "issue_id": issue_id,
-                    "previous_rounds_held": self.state.conviction_rounds_held[agent_id][current_proposal]
-                },
-                message=f"Agent {agent_id} switched conviction from {current_proposal} to {proposal_id}"
-            ))
+        # No automatic switching detection - switching only happens via explicit switch_conviction() calls
+        is_switching = False  # This will always be False now for regular staking
         
         # Update conviction tracking
         self.state.conviction_ledger[agent_id][proposal_id] += stake_amount
         self.state.conviction_rounds[agent_id][proposal_id] += 1
         self.state.conviction_rounds_held[agent_id][proposal_id] += 1  # Always increment total rounds held
+        
+        # Track original stake (first stake only)
+        if self.state.original_stakes[agent_id][proposal_id] == 0:
+            self.state.original_stakes[agent_id][proposal_id] = stake_amount
         
         # Calculate conviction multiplier
         multiplier = self.calculate_conviction_multiplier(agent_id, proposal_id, conviction_params)
@@ -296,7 +282,7 @@ class CreditManager:
             "effective_weight": effective_weight,
             "total_conviction": total_conviction,
             "consecutive_rounds": consecutive_rounds,
-            "switched_from": current_proposal if is_switching else None
+            "switched_from": None  # Switching only happens via explicit switch_conviction() calls
         }
 
     #return events as a reported dict
@@ -320,3 +306,151 @@ class CreditManager:
                     "issue_id": event["issue_id"]
                 })
         return reported
+    
+    def auto_build_conviction(self, conviction_params: dict, tick: int, issue_id: str) -> int:
+        """Automatically build conviction for all existing positions each round."""
+        total_conviction_built = 0
+        
+        # Build conviction for all agents with existing positions
+        for agent_id in list(self.state.conviction_ledger.keys()):
+            for proposal_id in list(self.state.conviction_ledger[agent_id].keys()):
+                current_conviction = self.state.conviction_ledger[agent_id][proposal_id]
+                
+                if current_conviction > 0:
+                    # Calculate conviction growth based on multiplier
+                    original_stake = self.state.original_stakes[agent_id][proposal_id]
+                    current_rounds = self.state.conviction_rounds[agent_id][proposal_id]
+                    
+                    # Calculate what conviction should be with incremented rounds
+                    incremented_rounds = current_rounds + 1
+                    
+                    # Temporarily increment rounds to calculate new multiplier
+                    self.state.conviction_rounds[agent_id][proposal_id] = incremented_rounds
+                    new_multiplier = self.calculate_conviction_multiplier(agent_id, proposal_id, conviction_params)
+                    target_conviction = int(original_stake * new_multiplier)
+                    
+                    # Restore original rounds
+                    self.state.conviction_rounds[agent_id][proposal_id] = current_rounds
+                    
+                    # Calculate conviction growth
+                    conviction_growth = target_conviction - current_conviction
+                    
+                    if conviction_growth > 0:
+                        # Apply conviction growth
+                        self.state.conviction_ledger[agent_id][proposal_id] = target_conviction
+                        self.state.conviction_rounds[agent_id][proposal_id] = incremented_rounds
+                        self.state.conviction_rounds_held[agent_id][proposal_id] += 1
+                        
+                        total_conviction_built += conviction_growth
+                        
+                        log_event(LogEntry(
+                            tick=tick,
+                            event_type=EventType.CONVICTION_UPDATED,
+                            agent_id=agent_id,
+                            payload={
+                                "proposal_id": proposal_id,
+                                "conviction_growth": conviction_growth,
+                                "new_total_conviction": target_conviction,
+                                "original_stake": original_stake,
+                                "new_multiplier": new_multiplier,
+                                "consecutive_rounds": incremented_rounds,
+                                "issue_id": issue_id,
+                                "auto_build": True
+                            },
+                            message=f"Auto-conviction: {agent_id} → P{proposal_id}: +{conviction_growth} CP (total: {target_conviction}, ×{new_multiplier:.3f})"
+                        ))
+        
+        if total_conviction_built > 0:
+            log_event(LogEntry(
+                tick=tick,
+                event_type=EventType.CONVICTION_UPDATED,
+                payload={
+                    "total_conviction_built": total_conviction_built,
+                    "issue_id": issue_id,
+                    "auto_build_summary": True
+                },
+                message=f"Auto-built {total_conviction_built} CP conviction across all positions"
+            ))
+        
+        return total_conviction_built
+    
+    def has_sufficient_conviction(self, agent_id: str, proposal_id: str, cp_amount: int) -> bool:
+        """Check if agent has sufficient conviction on a proposal to withdraw the specified amount."""
+        current_conviction = self.state.conviction_ledger[agent_id][proposal_id]
+        return current_conviction >= cp_amount
+    
+    def switch_conviction(self, agent_id: str, source_proposal_id: str, target_proposal_id: str, 
+                         cp_amount: int, tick: int, issue_id: str, reason: str = "strategic_switch") -> bool:
+        """Move CP from one proposal to another with conviction reset penalty."""
+        
+        # Validate sufficient conviction on source
+        if not self.has_sufficient_conviction(agent_id, source_proposal_id, cp_amount):
+            return False
+        
+        # Store original values for logging
+        source_conviction_before = self.state.conviction_ledger[agent_id][source_proposal_id]
+        source_rounds_before = self.state.conviction_rounds[agent_id][source_proposal_id]
+        target_conviction_before = self.state.conviction_ledger[agent_id][target_proposal_id]
+        target_rounds_before = self.state.conviction_rounds[agent_id][target_proposal_id]
+        
+        # Withdraw CP from source proposal
+        self.state.conviction_ledger[agent_id][source_proposal_id] -= cp_amount
+        
+        # If source conviction reaches zero, reset rounds to 0
+        if self.state.conviction_ledger[agent_id][source_proposal_id] == 0:
+            self.state.conviction_rounds[agent_id][source_proposal_id] = 0
+            # Don't reset original_stakes - that's permanent record
+        
+        # Add CP to target proposal (conviction resets to base)
+        self.state.conviction_ledger[agent_id][target_proposal_id] += cp_amount
+        
+        # Reset conviction rounds on target (penalty) - start over at 1
+        self.state.conviction_rounds[agent_id][target_proposal_id] = 1
+        
+        # If this is first time staking on target, record original stake
+        if self.state.original_stakes[agent_id][target_proposal_id] == 0:
+            self.state.original_stakes[agent_id][target_proposal_id] = cp_amount
+        
+        # Always increment total rounds held for target
+        self.state.conviction_rounds_held[agent_id][target_proposal_id] += 1
+        
+        # Log the switching event
+        log_event(LogEntry(
+            tick=tick,
+            event_type=EventType.CONVICTION_SWITCHED,
+            agent_id=agent_id,
+            payload={
+                "source_proposal_id": source_proposal_id,
+                "target_proposal_id": target_proposal_id,
+                "cp_amount": cp_amount,
+                "reason": reason,
+                "issue_id": issue_id,
+                "source_conviction_before": source_conviction_before,
+                "source_conviction_after": self.state.conviction_ledger[agent_id][source_proposal_id],
+                "source_rounds_before": source_rounds_before,
+                "source_rounds_after": self.state.conviction_rounds[agent_id][source_proposal_id],
+                "target_conviction_before": target_conviction_before,
+                "target_conviction_after": self.state.conviction_ledger[agent_id][target_proposal_id],
+                "target_rounds_before": target_rounds_before,
+                "target_rounds_after": self.state.conviction_rounds[agent_id][target_proposal_id],
+            },
+            message=f"Conviction switched: {agent_id} moved {cp_amount} CP from P{source_proposal_id} → P{target_proposal_id} ({reason}) - Target conviction reset"
+        ))
+        
+        # Record in credit events for audit trail
+        switch_event = {
+            "type": "Switch",
+            "agent_id": agent_id,
+            "amount": 0,  # No CP created/destroyed
+            "reason": f"Switch {cp_amount} CP from P{source_proposal_id} to P{target_proposal_id}: {reason}",
+            "tick": tick,
+            "issue_id": issue_id,
+            "source_proposal_id": source_proposal_id,
+            "target_proposal_id": target_proposal_id,
+            "cp_amount": cp_amount,
+            "switch_reason": reason
+        }
+        self.state.credit_events.append(switch_event)
+        
+        return True
+    

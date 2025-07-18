@@ -70,7 +70,7 @@ class AgentPool(BaseModel):
         return list(self.agents.keys())
 
 class Action(BaseModel):
-    type: Literal["submit_proposal", "feedback", "signal_ready", "revise", "stake"]
+    type: Literal["submit_proposal", "feedback", "signal_ready", "revise", "stake", "switch_stake"]
     agent_id: str
     payload: Dict  # May be refined into specific models later
 
@@ -180,9 +180,10 @@ class RoundtableState(BaseModel):
     # Credit and conviction tracking
     credit_events: List[Dict] = []  # Credit burn/award history
     stake_ledger: List[Dict] = []  # Stake records
-    conviction_ledger: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> stake
+    conviction_ledger: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> total conviction
     conviction_rounds: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> consecutive rounds
     conviction_rounds_held: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> total rounds held
+    original_stakes: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> original stake amount
     
     # Issue and proposal state
     current_issue: Optional['Issue'] = None
@@ -222,6 +223,7 @@ class RoundtableState(BaseModel):
             "conviction_ledger": json.dumps(conviction_ledger_dict),
             "conviction_rounds": json.dumps(conviction_rounds_dict),
             "conviction_rounds_held": json.dumps(conviction_rounds_held_dict),
+            "original_stakes": json.dumps({agent_id: dict(proposals) for agent_id, proposals in self.original_stakes.items()}),
             "stake_ledger": json.dumps(self.stake_ledger),
             "credit_events": json.dumps(self.credit_events),
             "execution_ledger": json.dumps(self.execution_ledger),

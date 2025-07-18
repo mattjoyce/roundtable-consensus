@@ -152,6 +152,8 @@ class TheBureau:
                 self.receive_revision(action.agent_id, action.payload)
             elif action.type == "stake":
                 self.receive_stake(action.agent_id, action.payload)
+            elif action.type == "switch_stake":
+                self.receive_switch(action.agent_id, action.payload)
 
     def receive_proposal(self, agent_id: str, proposal: Proposal):
         tick = self.state.tick if self.current_consensus else 0
@@ -838,7 +840,9 @@ class TheBureau:
             # Get conviction parameters from current consensus
             conviction_params = {}
             if self.current_consensus:
-                conviction_params = self.config.conviction_params
+                conviction_params = self.config.conviction_params.copy()
+                # Set TargetRounds to match the actual staking rounds from config
+                conviction_params["TargetRounds"] = self.config.staking_rounds
 
             # Update conviction tracking and get conviction details
             conviction_details = self.creditmgr.update_conviction(
@@ -904,3 +908,199 @@ class TheBureau:
 
         # Mark agent as ready (regardless of success/failure)
         self.signal_ready(agent_id,payload={"reason": "stake_received"})
+
+    def receive_switch(self, agent_id: str, payload: dict):
+        """Process a switch_stake action from an agent - moves CP from one proposal to another with conviction reset."""
+        source_proposal_id = payload.get("source_proposal_id")
+        target_proposal_id = payload.get("target_proposal_id")
+        cp_amount = payload.get("cp_amount")
+        tick = payload.get("tick", 0)
+        issue_id = payload.get("issue_id")
+        reason = payload.get("reason", "strategic_switch")
+
+        log_event(LogEntry(
+            tick=tick,
+            phase=(
+                self.state.current_phase
+                if self.current_consensus
+                else None
+            ),
+            event_type=EventType.SWITCH_RECEIVED,
+            agent_id=agent_id,
+            payload={
+                "source_proposal_id": source_proposal_id,
+                "target_proposal_id": target_proposal_id,
+                "cp_amount": cp_amount,
+                "issue_id": issue_id,
+                "reason": reason,
+            },
+            message=f"Received switch from {agent_id}: {cp_amount} CP from #{source_proposal_id} → #{target_proposal_id} ({reason})"
+        ))
+
+        # Validation 1: Check if there's an active issue
+        if not self.state.current_issue or self.state.current_issue.issue_id != issue_id:
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.state.current_phase
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.SWITCH_REJECTED,
+                agent_id=agent_id,
+                payload={
+                    "reason": "wrong_issue",
+                },
+                message=f"Rejected switch from {agent_id}: Wrong or missing issue",
+                level=LogLevel.WARNING
+            ))
+            return
+
+        # Validation 2: Check if agent is assigned to the issue
+        if not self.state.current_issue.is_assigned(agent_id):
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.state.current_phase
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.SWITCH_REJECTED,
+                agent_id=agent_id,
+                payload={
+                    "reason": "not_assigned",
+                },
+                message=f"Rejected switch from {agent_id}: Not assigned to issue",
+                level=LogLevel.WARNING
+            ))
+            return
+
+        # Validation 3: Check CP amount is positive
+        if not cp_amount or cp_amount <= 0:
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.state.current_phase
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.SWITCH_REJECTED,
+                agent_id=agent_id,
+                payload={
+                    "reason": "invalid_amount",
+                },
+                message=f"Rejected switch from {agent_id}: Invalid CP amount {cp_amount}",
+                level=LogLevel.WARNING
+            ))
+            return
+
+        # Validation 4: Check proposal IDs are provided and different
+        if not source_proposal_id or not target_proposal_id:
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.state.current_phase
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.SWITCH_REJECTED,
+                agent_id=agent_id,
+                payload={
+                    "reason": "missing_proposal_ids",
+                },
+                message=f"Rejected switch from {agent_id}: Missing proposal IDs",
+                level=LogLevel.WARNING
+            ))
+            return
+
+        if source_proposal_id == target_proposal_id:
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.state.current_phase
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.SWITCH_REJECTED,
+                agent_id=agent_id,
+                payload={
+                    "reason": "same_proposal",
+                },
+                message=f"Rejected switch from {agent_id}: Source and target proposals are the same",
+                level=LogLevel.WARNING
+            ))
+            return
+
+        # Validation 5: Check agent has sufficient conviction on source proposal
+        if not self.creditmgr.has_sufficient_conviction(agent_id, source_proposal_id, cp_amount):
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.state.current_phase
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.SWITCH_REJECTED,
+                agent_id=agent_id,
+                payload={
+                    "reason": "insufficient_conviction",
+                    "source_proposal_id": source_proposal_id,
+                    "requested_amount": cp_amount,
+                },
+                message=f"Rejected switch from {agent_id}: Insufficient conviction on #{source_proposal_id}",
+                level=LogLevel.WARNING
+            ))
+            return
+
+        # Execute the switch via CreditManager
+        switch_success = self.creditmgr.switch_conviction(
+            agent_id=agent_id,
+            source_proposal_id=source_proposal_id,
+            target_proposal_id=target_proposal_id,
+            cp_amount=cp_amount,
+            tick=tick,
+            issue_id=issue_id,
+            reason=reason
+        )
+
+        if switch_success:
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.state.current_phase
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.SWITCH_RECORDED,
+                agent_id=agent_id,
+                payload={
+                    "source_proposal_id": source_proposal_id,
+                    "target_proposal_id": target_proposal_id,
+                    "cp_amount": cp_amount,
+                    "reason": reason,
+                    "issue_id": issue_id,
+                },
+                message=f"Switch recorded: {agent_id} moved {cp_amount} CP from #{source_proposal_id} → #{target_proposal_id} ({reason})"
+            ))
+        else:
+            log_event(LogEntry(
+                tick=tick,
+                phase=(
+                    self.state.current_phase
+                    if self.current_consensus
+                    else None
+                ),
+                event_type=EventType.SWITCH_REJECTED,
+                agent_id=agent_id,
+                payload={
+                    "reason": "switch_failed",
+                    "source_proposal_id": source_proposal_id,
+                    "target_proposal_id": target_proposal_id,
+                    "cp_amount": cp_amount,
+                },
+                message=f"Rejected switch from {agent_id}: Switch operation failed",
+                level=LogLevel.WARNING
+            ))
+
+        # Mark agent as ready (regardless of success/failure)
+        self.signal_ready(agent_id, payload={"reason": "switch_processed"})

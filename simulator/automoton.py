@@ -547,6 +547,72 @@ def handle_stake(agent: AgentActor, payload: dict):
         logger.info(f"[STAKE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO STAKE | Round {round_number} | Weights: risk=0.4, init=0.3, self=0.2, comp=0.1")
         return {"ack": True}
     
+    # Decision 1.5: Consider switching existing stakes before new staking
+    current_conviction = payload.get("current_conviction", {})  # agent_id -> proposal_id -> conviction_amount
+    agent_conviction = current_conviction.get(agent.agent_id, {})
+    
+    if agent_conviction:  # Agent has existing stakes to potentially switch
+        # Check if agent should consider switching (REDUCED SWITCHING PROBABILITY)
+        should_switch, switch_score, switch_roll = weighted_trait_decision(
+            traits={
+                "adaptability": adaptability,         # Higher = more likely to switch when advantageous
+                "risk_tolerance": risk_tolerance,     # Higher = willing to risk losing conviction multiplier
+                "self_interest": self_interest,       # Higher = strategic about optimizing position
+                "consistency": consistency           # Lower = more willing to change positions
+            },
+            weights={
+                "adaptability": 0.15,  # Reduced from 0.4 - less adaptive switching
+                "risk_tolerance": 0.1,  # Reduced from 0.3 - more conservative
+                "self_interest": 0.05,  # Reduced from 0.2 - less strategic switching
+                "consistency": -0.3  # Increased negative weight - consistency strongly reduces switching
+            },
+            rng=rng,
+            activation="linear"  # Switching should be gradual decision
+        )
+        
+        if should_switch:
+            # Find current proposal with highest conviction
+            current_proposal_id = max(agent_conviction.keys(), key=lambda pid: agent_conviction[pid])
+            current_conviction_amount = agent_conviction[current_proposal_id]
+            
+            # Get available proposals to switch to
+            all_proposals = payload.get("all_proposals", [])
+            possible_targets = [pid for pid in all_proposals if pid != current_proposal_id]
+            
+            if possible_targets and current_conviction_amount > 0:
+                # Choose target proposal (random for now, could be enhanced with feedback analysis)
+                target_proposal_id = rng.choice(possible_targets)
+                
+                # Determine how much to switch (trait-based)
+                switch_percentage = min(0.8, adaptability * 0.6 + risk_tolerance * 0.4)  # Up to 80%
+                switch_amount = max(1, int(current_conviction_amount * switch_percentage))
+                
+                # Generate switch reason based on traits
+                switch_reasons = ["poor_feedback", "better_alternative", "hedging_strategy", "strategic_reposition"]
+                reason_weights = [adaptability, persuasiveness, risk_tolerance, self_interest]
+                switch_reason = rng.choices(switch_reasons, weights=reason_weights)[0]
+                
+                # Submit switch action
+                ACTION_QUEUE.submit(Action(
+                    type="switch_stake",
+                    agent_id=agent.agent_id,
+                    payload={
+                        "source_proposal_id": current_proposal_id,
+                        "target_proposal_id": target_proposal_id,
+                        "cp_amount": switch_amount,
+                        "tick": tick,
+                        "issue_id": issue_id,
+                        "reason": switch_reason
+                    }
+                ))
+                
+                # Signal ready and return (don't also do regular staking)
+                signal_ready_action(agent.agent_id, issue_id)
+                logger.info(f"[STAKE] {agent.agent_id} scored {switch_score:.2f} vs roll {switch_roll:.2f} → SWITCHING {switch_amount} CP from P{current_proposal_id} → P{target_proposal_id} ({switch_reason}) | Round {round_number}")
+                return {"ack": True}
+            
+        logger.info(f"[STAKE] {agent.agent_id} considered switching: {switch_score:.2f} vs roll {switch_roll:.2f} → NO SWITCH | Proceeding to regular staking")
+    
     # Decision 2: Choose proposal to support
     own_proposal_id = payload.get("current_proposal_id", f"P{agent.agent_id}")
     

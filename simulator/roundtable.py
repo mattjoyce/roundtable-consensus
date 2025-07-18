@@ -15,7 +15,11 @@ class Phase:
         if state.phase_tick == 1:
             self._begin(state, config, creditmgr)
         
-        self._do(state, agents, config)
+        # StakePhase needs creditmgr for auto conviction building
+        if isinstance(self, StakePhase):
+            self._do(state, agents, config, creditmgr)
+        else:
+            self._do(state, agents, config)
         
         if state.phase_tick == self.max_think_ticks:
             self._finish(state, config, creditmgr)
@@ -317,21 +321,12 @@ class StakePhase(Phase):
         self.round_number = round_number
         self.conviction_params = conviction_params
     
-    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
-        log_event(LogEntry(
-            tick=state.tick,
-            phase=PhaseType.STAKE,
-            event_type=EventType.PHASE_EXECUTION,
-            payload={
-                "phase_number": self.phase_number,
-                "round_number": self.round_number,
-                "conviction_params": self.conviction_params
-            },
-            message=f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}"
-        ))
+    def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Initialize stake phase and transfer initial proposal stakes on first round."""
+        super()._begin(state, config, creditmgr)
         
         # Transfer initial proposal stakes to conviction tracking on first STAKE round
-        if self.round_number == 1:
+        if self.round_number == 1 and creditmgr:
             # Get all initial stakes from the ledger for this issue
             initial_stakes = [record for record in state.stake_ledger 
                             if record["stake_type"] == "initial" and record["issue_id"] == config.issue_id]
@@ -341,12 +336,15 @@ class StakePhase(Phase):
                 proposal_id = stake_record["proposal_id"]
                 stake_amount = stake_record["amount"]
                 
-                # Initialize conviction tracking with the initial proposal stake
-                # Note: This will need creditmgr reference - we'll pass it through config or find another way
-                # For now, let's update the conviction tracking directly on state
-                state.conviction_ledger[agent_id][proposal_id] += stake_amount
-                state.conviction_rounds[agent_id][proposal_id] = 1
-                state.conviction_rounds_held[agent_id][proposal_id] = 1
+                # Use creditmgr to properly update conviction tracking
+                creditmgr.update_conviction(
+                    agent_id=agent_id,
+                    proposal_id=proposal_id,
+                    stake_amount=stake_amount,
+                    conviction_params=self.conviction_params,
+                    tick=state.tick,
+                    issue_id=config.issue_id
+                )
                 
                 log_event(LogEntry(
                     tick=state.tick,
@@ -360,6 +358,40 @@ class StakePhase(Phase):
                     },
                     message=f"Transferred initial proposal stake: {agent_id} {stake_amount} CP → {proposal_id} (Round 1)"
                 ))
+    
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
+        """Signal agents to make staking decisions and automatically build conviction."""
+        log_event(LogEntry(
+            tick=state.tick,
+            phase=PhaseType.STAKE,
+            event_type=EventType.PHASE_EXECUTION,
+            payload={
+                "phase_number": self.phase_number,
+                "round_number": self.round_number,
+                "conviction_params": self.conviction_params
+            },
+            message=f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}"
+        ))
+        
+        # Automatically build conviction for all existing positions
+        if creditmgr and self.round_number > 1:  # Skip auto-build on first round
+            conviction_built = creditmgr.auto_build_conviction(
+                conviction_params=self.conviction_params,
+                tick=state.tick,
+                issue_id=config.issue_id
+            )
+            if conviction_built > 0:
+                log_event(LogEntry(
+                    tick=state.tick,
+                    phase=PhaseType.STAKE,
+                    event_type=EventType.CONVICTION_UPDATED,
+                    payload={
+                        "total_conviction_built": conviction_built,
+                        "round_number": self.round_number,
+                        "auto_build": True
+                    },
+                    message=f"Auto-built {conviction_built} CP conviction for round {self.round_number}"
+                ))
         
         for agent in agents:
             # Include current balance in the signal
@@ -370,6 +402,16 @@ class StakePhase(Phase):
             # Get all available proposals for agent decision making
             all_proposals = list(state.agent_proposal_ids.values())
             
+            # Get current conviction data for switching decisions
+            current_conviction = {}
+            for agent_id in state.conviction_ledger:
+                agent_convictions = {}
+                for proposal_id, conviction_amount in state.conviction_ledger[agent_id].items():
+                    if conviction_amount > 0:  # Only include active convictions
+                        agent_convictions[proposal_id] = conviction_amount
+                if agent_convictions:  # Only include agents with active convictions
+                    current_conviction[agent_id] = agent_convictions
+            
             agent.on_signal({
                 "type": "Stake",
                 "round_number": self.round_number,
@@ -378,7 +420,8 @@ class StakePhase(Phase):
                 "issue_id": config.issue_id,
                 "current_balance": current_balance,
                 "current_proposal_id": current_proposal_id,
-                "all_proposals": all_proposals
+                "all_proposals": all_proposals,
+                "current_conviction": current_conviction
             })
     
     def is_complete(self, state: RoundtableState) -> bool:
@@ -449,10 +492,14 @@ def generate_phases(config: UnifiedConfig) -> List[Phase]:
         phase_counter += 1
     
     # 3. STAKE phases (initial self-stake + conviction rounds)
+    # Add TargetRounds to conviction_params to match staking_rounds
+    conviction_params_with_target = config.conviction_params.copy()
+    conviction_params_with_target["TargetRounds"] = config.staking_rounds
+    
     phases.append(StakePhase(
         phase_number=phase_counter,
         round_number=1,
-        conviction_params=config.conviction_params,
+        conviction_params=conviction_params_with_target,
         max_think_ticks=3
     ))
     phase_counter += 1
@@ -463,7 +510,7 @@ def generate_phases(config: UnifiedConfig) -> List[Phase]:
         phases.append(StakePhase(
             phase_number=phase_counter,
             round_number=stake_round,
-            conviction_params=config.conviction_params,
+            conviction_params=conviction_params_with_target,
             max_think_ticks=3
         ))
         phase_counter += 1
@@ -539,10 +586,7 @@ class Consensus:
             # Execute phase logic
             if current_phase:
                 agents = list(self.config.selected_agents.values())
-                if isinstance(current_phase, ProposePhase):
-                    current_phase.execute(self.state, agents, self.config, self.creditmgr)
-                else:
-                    current_phase.execute(self.state, agents, self.config)
+                current_phase.execute(self.state, agents, self.config, self.creditmgr)
 
         # Record the state in the execution ledger
         self.state.execution_ledger.append({
