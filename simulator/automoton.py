@@ -37,6 +37,34 @@ def get_phase_memory(agent, phase_name: str) -> dict:
     """Get or initialize phase-specific memory for an agent."""
     return agent.memory.setdefault(phase_name, {})
 
+def calculate_strategic_cp_reserve(traits: dict, current_balance: int, proposal_self_stake: int) -> int:
+    """Calculate how much CP to reserve for staking based on strategic traits."""
+    
+    # Strategic thinking traits (reinterpreted)
+    self_interest = traits["self_interest"]      # Higher = more strategic about resources
+    risk_tolerance = traits["risk_tolerance"]    # Lower = more conservative with CP
+    consistency = traits["consistency"]          # Higher = plans ahead better
+    
+    # Calculate strategic reserve factor
+    strategic_factor = (
+        self_interest * 0.4 +           # Self-interested agents plan better
+        (1 - risk_tolerance) * 0.4 +    # Risk-averse agents save more
+        consistency * 0.2               # Consistent agents plan ahead
+    )
+    
+    # Reserve 20-80% of CP for future staking based on strategic thinking
+    reserve_percentage = 0.2 + (strategic_factor * 0.6)
+    
+    # Estimate needed CP for staking (assume 3-5 staking rounds, each ~20-50 CP)
+    estimated_staking_need = proposal_self_stake * 2  # Conservative estimate
+    
+    # Reserve the higher of percentage-based or absolute estimate
+    percentage_reserve = int(current_balance * reserve_percentage)
+    reserve_amount = max(percentage_reserve, estimated_staking_need)
+    
+    # Don't reserve more than current balance
+    return min(reserve_amount, current_balance)
+
 
 def weighted_trait_decision(traits, weights, rng, activation: str = "linear"):
     raw_score = sum(traits[t] * weights[t] for t in weights)
@@ -281,6 +309,7 @@ def handle_revise(agent: AgentActor, payload: dict):
     issue_id = payload.get("issue_id", "unknown")
     tick = payload.get("tick", 0)
     feedback_received = payload.get("feedback_received", [])  # Feedback on agent's proposal
+    proposal_self_stake = payload.get("proposal_self_stake", 50)  # Get from config
     rng = agent.rng
     profile = agent.metadata.get("protocol_profile", {})
     
@@ -297,6 +326,15 @@ def handle_revise(agent: AgentActor, payload: dict):
     risk_tolerance = traits["risk_tolerance"]
     persuasiveness = traits["persuasiveness"]
     
+    # Get current balance for strategic planning
+    current_balance = payload.get("current_balance", 150)  # Get from signal payload
+    
+    # Calculate strategic CP reserve
+    strategic_reserve = calculate_strategic_cp_reserve(traits, current_balance, proposal_self_stake)
+    available_for_revision = current_balance - strategic_reserve
+    
+    logger.debug(f"[REVISE] {agent.agent_id} strategic planning: balance={current_balance}, reserve={strategic_reserve}, available={available_for_revision} | self_interest={self_interest:.2f}, risk_tolerance={risk_tolerance:.2f}, consistency={consistency:.2f}")
+    
     # Check if agent has feedback on their proposal
     if not feedback_received:
         # For testing: Make agents more likely to revise even without feedback
@@ -312,6 +350,13 @@ def handle_revise(agent: AgentActor, payload: dict):
             # Make a preemptive revision (simulating self-improvement)
             delta_factor = (adaptability * 0.6 + risk_tolerance * 0.4)
             delta = max(0.1, min(1.0, 0.1 + delta_factor * 0.6))  # Smaller deltas for preemptive revisions
+            
+            # Strategic CP check: can agent afford this revision?
+            revision_cost = int(proposal_self_stake * delta)
+            if revision_cost > available_for_revision:
+                logger.info(f"[REVISE] {agent.agent_id} strategic holdback: preemptive revision costs {revision_cost} CP, only {available_for_revision} available (reserved {strategic_reserve} CP for staking)")
+                signal_ready_action(agent.agent_id, issue_id)
+                return {"ack": True}
             
             # Generate bigger revised content using lorem ipsum
             
@@ -403,6 +448,13 @@ def handle_revise(agent: AgentActor, payload: dict):
     # Higher adaptability + risk tolerance = larger revisions
     delta_factor = (adaptability * 0.6 + risk_tolerance * 0.4)
     delta = max(0.1, min(1.0, 0.2 + delta_factor * 0.8))  # Range [0.1, 1.0]
+    
+    # Strategic CP check: can agent afford this revision?
+    revision_cost = int(proposal_self_stake * delta)
+    if revision_cost > available_for_revision:
+        logger.info(f"[REVISE] {agent.agent_id} strategic holdback: feedback revision costs {revision_cost} CP, only {available_for_revision} available (reserved {strategic_reserve} CP for staking)")
+        signal_ready_action(agent.agent_id, issue_id)
+        return {"ack": True}
     
     # Generate bigger revised content using lorem ipsum
     

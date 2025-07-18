@@ -22,11 +22,33 @@ class Phase:
     
     def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
         """Initialize phase when it starts."""
-        pass
+        log_event(LogEntry(
+            tick=state.tick,
+            phase=PhaseType(self.phase_type),
+            event_type=EventType.PHASE_BEGIN,
+            payload={
+                "phase_number": self.phase_number,
+                "phase_type": self.phase_type,
+                "max_think_ticks": self.max_think_ticks,
+                "issue_id": config.issue_id
+            },
+            message=f"{self.phase_type} Phase [{self.phase_number}] beginning"
+        ))
     
     def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
         """Clean up phase when it ends."""
-        pass
+        log_event(LogEntry(
+            tick=state.tick,
+            phase=PhaseType(self.phase_type),
+            event_type=EventType.PHASE_FINISH,
+            payload={
+                "phase_number": self.phase_number,
+                "phase_type": self.phase_type,
+                "phase_tick": state.phase_tick,
+                "issue_id": config.issue_id
+            },
+            message=f"{self.phase_type} Phase [{self.phase_number}] finishing at tick {state.phase_tick}"
+        ))
     
     def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
         """Execute main phase logic."""
@@ -46,6 +68,7 @@ class ProposePhase(Phase):
     
     def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
         """Create NoAction proposal #0."""
+        super()._begin(state, config, creditmgr)
         if state.current_issue:
             # Check if NoAction proposal already exists
             existing_noaction = next(
@@ -81,6 +104,7 @@ class ProposePhase(Phase):
     
     def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
         """Handle timeout: stake inactive agents to NoAction."""
+        super()._finish(state, config, creditmgr)
         if not creditmgr or not state.current_issue:
             return
             
@@ -160,6 +184,7 @@ class FeedbackPhase(Phase):
     
     def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
         """Initialize feedback phase tracking and log phase start."""
+        super()._begin(state, config, creditmgr)
         self.feedback_stats = {
             "feedbacks_submitted": 0,
             "agents_participated": set(),
@@ -205,6 +230,7 @@ class FeedbackPhase(Phase):
     
     def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
         """Complete feedback phase - force all agents ready on timeout."""
+        super()._finish(state, config, creditmgr)
         # Calculate feedback stats from actual state
         total_feedbacks = 0
         agents_with_feedback = set()
@@ -246,7 +272,7 @@ class RevisePhase(Phase):
         self.cycle_number = cycle_number
         self.proposal_self_stake = proposal_self_stake
     
-    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
         log_event(LogEntry(
             tick=state.tick,
             phase=PhaseType.REVISE,
@@ -277,7 +303,8 @@ class RevisePhase(Phase):
                 "proposal_self_stake": self.proposal_self_stake,
                 "feedback_received": feedback_received,
                 "current_proposal_id": current_proposal_id,
-                "all_proposals": all_proposals
+                "all_proposals": all_proposals,
+                "current_balance": state.agent_balances.get(agent.agent_id, 0)
             })
     
     def is_complete(self, state: RoundtableState) -> bool:
@@ -361,19 +388,14 @@ class FinalizePhase(Phase):
     def __init__(self, phase_number: int, max_think_ticks: int = 3):
         super().__init__("FINALIZE", phase_number, max_think_ticks)
     
-    def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
-        log_event(LogEntry(
-            tick=state.tick,
-            phase=PhaseType.FINALIZE,
-            event_type=EventType.PHASE_EXECUTION,
-            payload={
-            "phase_number": self.phase_number,
-            "max_think_ticks": self.max_think_ticks
-            },
-            message=f"Executing Finalize Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}"
-        ))
-        # Signal agents about finalization phase (optional)
-        
+    def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Initialize finalization phase."""
+        super()._begin(state, config, creditmgr)
+        # Additional finalization-specific initialization can go here
+    
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+        """Signal agents about finalization and mark them ready."""
+        # Signal agents about finalization phase
         for agent in agents:
             agent.on_signal({
                 "type": "Finalize",
@@ -381,6 +403,15 @@ class FinalizePhase(Phase):
                 "tick": state.tick,
                 "issue_id": config.issue_id
             })
+        
+        # Mark all agents as ready since finalization doesn't require agent input
+        for agent in agents:
+            state.agent_readiness[agent.agent_id] = True
+    
+    def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Complete finalization phase."""
+        super()._finish(state, config, creditmgr)
+        # Additional finalization-specific cleanup can go here
     
     def is_complete(self, state: RoundtableState) -> bool:
         return True
