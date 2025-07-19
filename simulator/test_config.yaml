@@ -21,14 +21,14 @@ traits:
 consensus:
   assignment_award: 100
   max_feedback_per_agent: 3
-  feedback_stake: 15
+  feedback_stake: 10
   proposal_self_stake: 50
   revision_cycles:
     min: 2
     max: 4
   staking_rounds:
-    min: 5
-    max: 8
+    min: 10
+    max: 10
   conviction_params:
     MaxMultiplier: 2.0
     TargetFraction: 0.98

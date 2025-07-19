@@ -33,29 +33,29 @@ def parse_arguments():
     parser.add_argument(
         "--max-scenarios",
         type=int,
-        default=2,
-        help="Number of simulation scenarios to run (default: 2)"
+        default=None,
+        help="Number of simulation scenarios to run (default: from config file)"
     )
     
     parser.add_argument(
         "--pool-seed",
         type=int,
-        default=1113,
-        help="Seed for agent pool generation (default: 1113)"
+        default=None,
+        help="Seed for agent pool generation (default: from config file)"
     )
     
     parser.add_argument(
         "--run-seed",
         type=int,
-        default=1719,
-        help="Seed for run configuration generation (default: 1719)"
+        default=None,
+        help="Seed for run configuration generation (default: from config file)"
     )
     
     parser.add_argument(
         "--num-agents",
         type=int,
-        default=5,
-        help="Number of agents to select for each scenario (default: 5)"
+        default=None,
+        help="Number of agents to select for each scenario (default: from config file)"
     )
     
     parser.add_argument(
@@ -79,7 +79,10 @@ def main():
     args = parse_arguments()
     
     # Load configuration with CLI argument precedence
+    print(f"DEBUG: Loading config from: {args.config}")
     config = get_config_with_args(args.config, args)
+    print(f"DEBUG: num_agents in loaded config: {config['simulation']['num_agents']}")
+    print(f"DEBUG: staking_rounds in loaded config: {config['consensus']['staking_rounds']}")
     
     # Generate or use provided simulation ID
     sim_id = args.sim_id if args.sim_id else generate_sim_id()

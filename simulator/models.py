@@ -3,7 +3,18 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Optional, Literal, Any
 from collections import defaultdict
 import random
+import uuid
 from simlog import log_event, logger, LogEntry, EventType, LogLevel
+
+class StakeRecord(BaseModel):
+    """Atomic stake ledger entry as defined in staking-and-conviction-notes.md"""
+    stake_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    agent_id: str
+    proposal_id: int
+    cp: int = Field(ge=1)
+    initial_tick: int = Field(ge=1)
+    status: Literal["active", "closed", "burned"] = "active"
+    issue_id: str
 
 class Proposal(BaseModel):
     tick: int
@@ -70,7 +81,7 @@ class AgentPool(BaseModel):
         return list(self.agents.keys())
 
 class Action(BaseModel):
-    type: Literal["submit_proposal", "feedback", "signal_ready", "revise", "stake", "switch_stake"]
+    type: Literal["submit_proposal", "feedback", "signal_ready", "revise", "stake", "switch_stake", "unstake"]
     agent_id: str
     payload: Dict  # May be refined into specific models later
 
@@ -179,7 +190,7 @@ class RoundtableState(BaseModel):
     
     # Credit and conviction tracking
     credit_events: List[Dict] = []  # Credit burn/award history
-    stake_ledger: List[Dict] = []  # Stake records
+    stake_ledger: List[StakeRecord] = []  # Atomic stake records
     conviction_ledger: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> total conviction
     conviction_rounds: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> consecutive rounds
     conviction_rounds_held: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> total rounds held
@@ -195,6 +206,26 @@ class RoundtableState(BaseModel):
     
     class Config:
         arbitrary_types_allowed = True
+    
+    def get_active_stakes_by_agent(self, agent_id: str) -> List[StakeRecord]:
+        """Get all active stakes for an agent."""
+        return [stake for stake in self.stake_ledger 
+                if stake.agent_id == agent_id and stake.status == "active"]
+    
+    def get_active_stakes_for_proposal(self, proposal_id: int) -> List[StakeRecord]:
+        """Get all active stakes for a proposal."""
+        return [stake for stake in self.stake_ledger 
+                if stake.proposal_id == proposal_id and stake.status == "active"]
+    
+    def get_agent_stake_on_proposal(self, agent_id: str, proposal_id: int) -> List[StakeRecord]:
+        """Get agent's active stakes on a specific proposal."""
+        return [stake for stake in self.stake_ledger 
+                if stake.agent_id == agent_id and stake.proposal_id == proposal_id and stake.status == "active"]
+    
+    def get_mandatory_stakes(self) -> List[StakeRecord]:
+        """Get all mandatory (tick=1) stakes."""
+        return [stake for stake in self.stake_ledger 
+                if stake.initial_tick == 1 and stake.status == "active"]
     
     def serialize_for_snapshot(self) -> dict:
         """Serialize state for database snapshot storage."""
@@ -224,7 +255,7 @@ class RoundtableState(BaseModel):
             "conviction_rounds": json.dumps(conviction_rounds_dict),
             "conviction_rounds_held": json.dumps(conviction_rounds_held_dict),
             "original_stakes": json.dumps({agent_id: dict(proposals) for agent_id, proposals in self.original_stakes.items()}),
-            "stake_ledger": json.dumps(self.stake_ledger),
+            "stake_ledger": json.dumps([stake.model_dump() for stake in self.stake_ledger]),
             "credit_events": json.dumps(self.credit_events),
             "execution_ledger": json.dumps(self.execution_ledger),
             "proposal_counter": self.proposal_counter,

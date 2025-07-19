@@ -116,17 +116,19 @@ class CreditManager:
         return list(self.state.credit_events)
 
     def stake_to_proposal(self, agent_id: str, proposal_id: str, amount: int, tick: int, issue_id: str) -> bool:
+        """Create mandatory self-stake at tick=1 for proposal submission."""
+        from models import StakeRecord
+        
         if self.attempt_deduct(agent_id, amount, "Proposal Self Stake", tick, issue_id):
-            # Add stake record to ledger
-            stake_record = {
-                "proposal_id": proposal_id,
-                "amount": amount,
-                "staked_by": agent_id,
-                "round": 0,  # Initial proposal stakes are round 0
-                "tick": tick,
-                "issue_id": issue_id,
-                "stake_type": "initial"
-            }
+            # Create mandatory stake record (always at tick=1 for proposals)
+            stake_record = StakeRecord(
+                agent_id=agent_id,
+                proposal_id=int(proposal_id),
+                cp=amount,
+                initial_tick=1,  # Mandatory stakes are always at tick=1
+                status="active",
+                issue_id=issue_id
+            )
             self.state.stake_ledger.append(stake_record)
             
             log_event(LogEntry(
@@ -137,9 +139,44 @@ class CreditManager:
                     "proposal_id": proposal_id,
                     "amount": amount,
                     "issue_id": issue_id,
-                    "stake_type": "initial"
+                    "stake_type": "mandatory",
+                    "stake_id": stake_record.stake_id,
+                    "initial_tick": 1
                 },
-                message=f"Stake recorded: {agent_id} staked {amount} CP on {proposal_id} (Round 0, proposal_stake) - Ledger entry added"
+                message=f"Mandatory stake recorded: {agent_id} staked {amount} CP on P{proposal_id} (tick=1, non-switchable)"
+            ))
+            return True
+        return False
+
+    def create_voluntary_stake(self, agent_id: str, proposal_id: int, amount: int, tick: int, issue_id: str) -> bool:
+        """Create voluntary stake during stake phases (initial_tick = current tick)."""
+        from models import StakeRecord
+        
+        if self.attempt_deduct(agent_id, amount, "Voluntary Stake", tick, issue_id):
+            # Create voluntary stake record at current tick
+            stake_record = StakeRecord(
+                agent_id=agent_id,
+                proposal_id=proposal_id,
+                cp=amount,
+                initial_tick=tick,  # Voluntary stakes use current tick
+                status="active",
+                issue_id=issue_id
+            )
+            self.state.stake_ledger.append(stake_record)
+            
+            log_event(LogEntry(
+                tick=tick,
+                event_type=EventType.STAKE_RECORDED,
+                agent_id=agent_id,
+                payload={
+                    "proposal_id": proposal_id,
+                    "amount": amount,
+                    "issue_id": issue_id,
+                    "stake_type": "voluntary",
+                    "stake_id": stake_record.stake_id,
+                    "initial_tick": tick
+                },
+                message=f"Voluntary stake recorded: {agent_id} staked {amount} CP on P{proposal_id} (tick={tick}, switchable)"
             ))
             return True
         return False
@@ -147,25 +184,25 @@ class CreditManager:
     def transfer_stake(self, old_proposal_id: str, new_proposal_id: str, tick: int, issue_id: str) -> bool:
         """Transfer stake from old proposal to new proposal (for versioned revisions)."""
         # Find all stakes for the old proposal
-        old_stakes = [record for record in self.state.stake_ledger if record["proposal_id"] == old_proposal_id]
+        old_stakes = [record for record in self.state.stake_ledger if record.proposal_id == old_proposal_id]
         
         if old_stakes:
             # Update each stake record to point to new proposal
             for record in old_stakes:
-                record["proposal_id"] = new_proposal_id
-                record["tick"] = tick  # Update to current tick
+                record.proposal_id = new_proposal_id
+                record.initial_tick = tick  # Update to current tick
                 
                 log_event(LogEntry(
                     tick=tick,
                     event_type=EventType.STAKE_TRANSFERRED,
-                    agent_id=record["staked_by"],
+                    agent_id=record.agent_id,
                     payload={
                         "old_proposal_id": old_proposal_id,
                         "new_proposal_id": new_proposal_id,
-                        "amount": record["amount"],
+                        "amount": record.cp,
                         "issue_id": issue_id
                     },
-                    message=f"Transferred stake of {record['amount']} CP from {old_proposal_id} to {new_proposal_id} (agent: {record['staked_by']})"
+                    message=f"Transferred stake of {record.cp} CP from {old_proposal_id} to {new_proposal_id} (agent: {record.agent_id})"
                 ))
             
             return True
@@ -173,30 +210,79 @@ class CreditManager:
 
     def get_agent_stakes(self, agent_id: str, issue_id: str = None) -> list:
         """Get all stakes by a specific agent."""
-        stakes = [record for record in self.state.stake_ledger if record["staked_by"] == agent_id]
+        stakes = [record for record in self.state.stake_ledger if record.agent_id == agent_id]
         if issue_id:
-            stakes = [record for record in stakes if record["issue_id"] == issue_id]
+            stakes = [record for record in stakes if record.issue_id == issue_id]
         return stakes
     
     def get_proposal_stakes(self, proposal_id: str, issue_id: str = None) -> list:
         """Get all stakes to a specific proposal."""
-        stakes = [record for record in self.state.stake_ledger if record["proposal_id"] == proposal_id]
+        stakes = [record for record in self.state.stake_ledger if record.proposal_id == proposal_id]
         if issue_id:
-            stakes = [record for record in stakes if record["issue_id"] == issue_id]
+            stakes = [record for record in stakes if record.issue_id == issue_id]
         return stakes
     
     def get_total_stake_for_proposal(self, proposal_id: str, issue_id: str = None) -> int:
         """Get the total amount staked to a specific proposal."""
         stakes = self.get_proposal_stakes(proposal_id, issue_id)
-        return sum(record["amount"] for record in stakes)
+        return sum(record.cp for record in stakes)
     
     def get_agent_stake_on_proposal(self, agent_id: str, proposal_id: str, issue_id: str = None) -> int:
         """Get the total amount a specific agent has staked on a specific proposal."""
         stakes = [record for record in self.state.stake_ledger 
-                 if record["staked_by"] == agent_id and record["proposal_id"] == proposal_id]
+                 if record.agent_id == agent_id and record.proposal_id == proposal_id]
         if issue_id:
-            stakes = [record for record in stakes if record["issue_id"] == issue_id]
-        return sum(record["amount"] for record in stakes)
+            stakes = [record for record in stakes if record.issue_id == issue_id]
+        return sum(record.cp for record in stakes)
+
+    def calculate_growth_curve(self, time_held: int, conviction_params: dict) -> float:
+        """Calculate growth curve value based on time held according to spec."""
+        if "MaxMultiplier" in conviction_params and "TargetFraction" in conviction_params:
+            # Exponential formula: growth_curve(t) = 1 + (MaxMultiplier - 1) × (1 - exp(-k × t))
+            max_multiplier = conviction_params["MaxMultiplier"]
+            target_fraction = conviction_params.get("TargetFraction", 0.98)
+            target_rounds = conviction_params.get("TargetRounds", 5)
+            
+            if time_held == 0:
+                return 1.0
+                
+            # Calculate k = -ln(1 - T) / R
+            k = -math.log(1 - target_fraction) / target_rounds
+            
+            # Calculate growth curve: 1 + (MaxMultiplier - 1) × (1 - exp(-k × t))
+            growth_value = 1 + (max_multiplier - 1) * (1 - math.exp(-k * time_held))
+            
+        else:
+            # Linear fallback: base + growth * time_held
+            base = conviction_params.get("base", 1.0)
+            growth = conviction_params.get("growth", 0.2)
+            growth_value = base + growth * time_held
+            
+        return round(growth_value, 3)
+    
+    def calculate_stake_conviction(self, stake: 'StakeRecord', current_tick: int, conviction_params: dict) -> float:
+        """Calculate conviction for a single stake: conviction(t) = cp * growth_curve(t - initial_tick)"""
+        time_held = current_tick - stake.initial_tick
+        growth_multiplier = self.calculate_growth_curve(time_held, conviction_params)
+        return stake.cp * growth_multiplier
+    
+    def calculate_total_conviction_for_proposal(self, proposal_id: int, current_tick: int, conviction_params: dict) -> float:
+        """Calculate total conviction for a proposal by summing individual stake convictions."""
+        active_stakes = self.state.get_active_stakes_for_proposal(proposal_id)
+        total_conviction = sum(
+            self.calculate_stake_conviction(stake, current_tick, conviction_params)
+            for stake in active_stakes
+        )
+        return round(total_conviction, 2)
+    
+    def calculate_agent_conviction_on_proposal(self, agent_id: str, proposal_id: int, current_tick: int, conviction_params: dict) -> float:
+        """Calculate agent's total conviction on a specific proposal."""
+        agent_stakes = self.state.get_agent_stake_on_proposal(agent_id, proposal_id)
+        total_conviction = sum(
+            self.calculate_stake_conviction(stake, current_tick, conviction_params)
+            for stake in agent_stakes
+        )
+        return round(total_conviction, 2)
 
     def calculate_conviction_multiplier(self, agent_id: str, proposal_id: str, conviction_params: dict) -> float:
         """Calculate conviction multiplier based on consecutive rounds and conviction parameters."""
@@ -379,40 +465,56 @@ class CreditManager:
         current_conviction = self.state.conviction_ledger[agent_id][proposal_id]
         return current_conviction >= cp_amount
     
-    def switch_conviction(self, agent_id: str, source_proposal_id: str, target_proposal_id: str, 
-                         cp_amount: int, tick: int, issue_id: str, reason: str = "strategic_switch") -> bool:
-        """Move CP from one proposal to another with conviction reset penalty."""
+    def switch_stake(self, agent_id: str, source_proposal_id: int, target_proposal_id: int, 
+                    cp_amount: int, tick: int, issue_id: str, reason: str = "strategic_switch") -> bool:
+        """Switch CP from source proposal to target proposal using atomic stake ledger (RFC-004)."""
+        from models import StakeRecord
         
-        # Validate sufficient conviction on source
-        if not self.has_sufficient_conviction(agent_id, source_proposal_id, cp_amount):
+        # Get agent's active stakes on source proposal
+        source_stakes = self.state.get_agent_stake_on_proposal(agent_id, source_proposal_id)
+        
+        # Check for mandatory stake protection (tick=1 stakes cannot be switched)
+        mandatory_stakes = [s for s in source_stakes if s.initial_tick == 1]
+        if mandatory_stakes:
+            mandatory_cp = sum(s.cp for s in mandatory_stakes)
+            available_cp = sum(s.cp for s in source_stakes) - mandatory_cp
+            if cp_amount > available_cp:
+                return False
+        
+        # Check sufficient CP available
+        total_available = sum(s.cp for s in source_stakes if s.initial_tick > 1)
+        if cp_amount > total_available:
             return False
         
-        # Store original values for logging
-        source_conviction_before = self.state.conviction_ledger[agent_id][source_proposal_id]
-        source_rounds_before = self.state.conviction_rounds[agent_id][source_proposal_id]
-        target_conviction_before = self.state.conviction_ledger[agent_id][target_proposal_id]
-        target_rounds_before = self.state.conviction_rounds[agent_id][target_proposal_id]
+        # Sort voluntary stakes by initial_tick (FIFO order)
+        voluntary_stakes = [s for s in source_stakes if s.initial_tick > 1]
+        voluntary_stakes.sort(key=lambda x: x.initial_tick)
         
-        # Withdraw CP from source proposal
-        self.state.conviction_ledger[agent_id][source_proposal_id] -= cp_amount
+        # Reduce/close source stakes (FIFO)
+        remaining_to_switch = cp_amount
+        for stake in voluntary_stakes:
+            if remaining_to_switch <= 0:
+                break
+                
+            if stake.cp <= remaining_to_switch:
+                # Close this stake completely
+                remaining_to_switch -= stake.cp
+                stake.status = "closed"
+            else:
+                # Partially reduce this stake
+                stake.cp -= remaining_to_switch
+                remaining_to_switch = 0
         
-        # If source conviction reaches zero, reset rounds to 0
-        if self.state.conviction_ledger[agent_id][source_proposal_id] == 0:
-            self.state.conviction_rounds[agent_id][source_proposal_id] = 0
-            # Don't reset original_stakes - that's permanent record
-        
-        # Add CP to target proposal (conviction resets to base)
-        self.state.conviction_ledger[agent_id][target_proposal_id] += cp_amount
-        
-        # Reset conviction rounds on target (penalty) - start over at 1
-        self.state.conviction_rounds[agent_id][target_proposal_id] = 1
-        
-        # If this is first time staking on target, record original stake
-        if self.state.original_stakes[agent_id][target_proposal_id] == 0:
-            self.state.original_stakes[agent_id][target_proposal_id] = cp_amount
-        
-        # Always increment total rounds held for target
-        self.state.conviction_rounds_held[agent_id][target_proposal_id] += 1
+        # Create new stake on target proposal at current tick
+        new_stake = StakeRecord(
+            agent_id=agent_id,
+            proposal_id=target_proposal_id,
+            cp=cp_amount,
+            initial_tick=tick,
+            status="active",
+            issue_id=issue_id
+        )
+        self.state.stake_ledger.append(new_stake)
         
         # Log the switching event
         log_event(LogEntry(
@@ -425,21 +527,14 @@ class CreditManager:
                 "cp_amount": cp_amount,
                 "reason": reason,
                 "issue_id": issue_id,
-                "source_conviction_before": source_conviction_before,
-                "source_conviction_after": self.state.conviction_ledger[agent_id][source_proposal_id],
-                "source_rounds_before": source_rounds_before,
-                "source_rounds_after": self.state.conviction_rounds[agent_id][source_proposal_id],
-                "target_conviction_before": target_conviction_before,
-                "target_conviction_after": self.state.conviction_ledger[agent_id][target_proposal_id],
-                "target_rounds_before": target_rounds_before,
-                "target_rounds_after": self.state.conviction_rounds[agent_id][target_proposal_id],
+                "new_stake_id": new_stake.stake_id
             },
-            message=f"Conviction switched: {agent_id} moved {cp_amount} CP from P{source_proposal_id} → P{target_proposal_id} ({reason}) - Target conviction reset"
+            message=f"Stake switched: {agent_id} moved {cp_amount} CP from P{source_proposal_id} → P{target_proposal_id} ({reason})"
         ))
         
         # Record in credit events for audit trail
         switch_event = {
-            "type": "Switch",
+            "type": "StakeSwitch",
             "agent_id": agent_id,
             "amount": 0,  # No CP created/destroyed
             "reason": f"Switch {cp_amount} CP from P{source_proposal_id} to P{target_proposal_id}: {reason}",
@@ -448,9 +543,81 @@ class CreditManager:
             "source_proposal_id": source_proposal_id,
             "target_proposal_id": target_proposal_id,
             "cp_amount": cp_amount,
-            "switch_reason": reason
+            "switch_reason": reason,
+            "new_stake_id": new_stake.stake_id
         }
         self.state.credit_events.append(switch_event)
         
         return True
+    
+    def unstake_from_proposal(self, agent_id: str, proposal_id: int, cp_amount: int, 
+                            tick: int, issue_id: str, reason: str = "unstake") -> bool:
+        """Unstake CP from a proposal and return to agent's balance (only voluntary stakes)."""
+        
+        # Get agent's active stakes on proposal
+        agent_stakes = self.state.get_agent_stake_on_proposal(agent_id, proposal_id)
+        
+        # Only voluntary stakes (initial_tick > 1) can be unstaked
+        voluntary_stakes = [s for s in agent_stakes if s.initial_tick > 1 and s.status == "active"]
+        total_available = sum(s.cp for s in voluntary_stakes)
+        
+        if cp_amount > total_available:
+            return False
+        
+        # Sort voluntary stakes by initial_tick (FIFO order)
+        voluntary_stakes.sort(key=lambda x: x.initial_tick)
+        
+        # Reduce/close stakes (FIFO) and restore CP to balance
+        remaining_to_unstake = cp_amount
+        for stake in voluntary_stakes:
+            if remaining_to_unstake <= 0:
+                break
+                
+            if stake.cp <= remaining_to_unstake:
+                # Close this stake completely
+                remaining_to_unstake -= stake.cp
+                stake.status = "closed"
+            else:
+                # Partially reduce this stake
+                stake.cp -= remaining_to_unstake
+                remaining_to_unstake = 0
+        
+        # Restore CP to agent's balance
+        self.state.agent_balances[agent_id] += cp_amount
+        
+        # Log the unstaking event
+        log_event(LogEntry(
+            tick=tick,
+            event_type=EventType.CREDIT_AWARD,  # CP returned to balance
+            agent_id=agent_id,
+            payload={
+                "proposal_id": proposal_id,
+                "cp_amount": cp_amount,
+                "reason": reason,
+                "issue_id": issue_id,
+                "unstake": True
+            },
+            message=f"Unstaked: {agent_id} withdrew {cp_amount} CP from P{proposal_id} → balance"
+        ))
+        
+        # Record in credit events for audit trail
+        unstake_event = {
+            "type": "Unstake",
+            "agent_id": agent_id,
+            "amount": cp_amount,
+            "reason": f"Unstake {cp_amount} CP from P{proposal_id}: {reason}",
+            "tick": tick,
+            "issue_id": issue_id,
+            "proposal_id": proposal_id,
+            "cp_amount": cp_amount
+        }
+        self.state.credit_events.append(unstake_event)
+        
+        return True
+
+    def switch_conviction(self, agent_id: str, source_proposal_id: str, target_proposal_id: str, 
+                         cp_amount: int, tick: int, issue_id: str, reason: str = "strategic_switch") -> bool:
+        """Legacy method - redirects to new stake-based switching."""
+        return self.switch_stake(agent_id, int(source_proposal_id), int(target_proposal_id), 
+                                cp_amount, tick, issue_id, reason)
     

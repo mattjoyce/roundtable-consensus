@@ -78,6 +78,11 @@ class EventType(str, Enum):
     SWITCH_RECORDED = "switch_recorded"
     SWITCH_REJECTED = "switch_rejected"
     
+    # Unstaking
+    UNSTAKE_RECEIVED = "unstake_received"
+    UNSTAKE_RECORDED = "unstake_recorded"
+    UNSTAKE_REJECTED = "unstake_rejected"
+    
     # Agent Actions
     AGENT_READY = "agent_ready"
     PHASE_TIMEOUT = "phase_timeout"

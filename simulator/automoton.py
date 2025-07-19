@@ -611,10 +611,80 @@ def handle_stake(agent: AgentActor, payload: dict):
                 logger.info(f"[STAKE] {agent.agent_id} scored {switch_score:.2f} vs roll {switch_roll:.2f} → SWITCHING {switch_amount} CP from P{current_proposal_id} → P{target_proposal_id} ({switch_reason}) | Round {round_number}")
                 return {"ack": True}
             
-        logger.info(f"[STAKE] {agent.agent_id} considered switching: {switch_score:.2f} vs roll {switch_roll:.2f} → NO SWITCH | Proceeding to regular staking")
+        logger.info(f"[STAKE] {agent.agent_id} considered switching: {switch_score:.2f} vs roll {switch_roll:.2f} → NO SWITCH | Proceeding to check unstaking")
+    
+    # Get own proposal ID for use throughout function
+    own_proposal_id = payload.get("current_proposal_id", f"P{agent.agent_id}")
+    
+    # Decision 1.75: Consider unstaking existing stakes (strategic withdrawal)
+    if agent_conviction:  # Agent has existing stakes to potentially unstake
+        # Check if agent should consider unstaking for strategic reasons
+        should_unstake, unstake_score, unstake_roll = weighted_trait_decision(
+            traits={
+                "risk_tolerance": 1 - risk_tolerance,  # Lower risk tolerance = more likely to unstake (get conservative)
+                "adaptability": adaptability,          # Higher = strategic position adjustments
+                "self_interest": self_interest,        # Higher = strategic about capital preservation
+                "consistency": 1 - consistency        # Lower consistency = more willing to change positions
+            },
+            weights={
+                "risk_tolerance": 0.4,  # Risk-averse agents unstake to preserve capital
+                "adaptability": 0.25,   # Adaptive agents adjust positions strategically
+                "self_interest": 0.2,   # Self-interested agents preserve CP for better opportunities
+                "consistency": 0.15     # Inconsistent agents more likely to withdraw
+            },
+            rng=rng,
+            activation="linear"  # Unstaking should be gradual decision
+        )
+        
+        if should_unstake:
+            # Find proposal with stakes to unstake from
+            # Prefer unstaking from proposals with lower conviction or that aren't agent's own
+            proposal_options = []
+            for pid, conviction_amount in agent_conviction.items():
+                if conviction_amount > 0:
+                    # Score proposals for unstaking (prefer others' proposals over own)
+                    unstake_score = conviction_amount
+                    if pid != own_proposal_id:
+                        unstake_score *= 1.5  # Prefer unstaking from others' proposals
+                    proposal_options.append((pid, conviction_amount, unstake_score))
+            
+            if proposal_options:
+                # Choose proposal to unstake from (weighted by score)
+                proposal_options.sort(key=lambda x: x[2], reverse=True)
+                unstake_proposal_id = proposal_options[0][0]
+                available_conviction = proposal_options[0][1]
+                
+                # Determine how much to unstake (trait-based)
+                # More risk-averse and self-interested agents unstake more
+                unstake_percentage = min(0.6, (1 - risk_tolerance) * 0.4 + self_interest * 0.3)  # Up to 60%
+                unstake_amount = max(1, int(available_conviction * unstake_percentage))
+                
+                # Generate unstake reason based on traits
+                unstake_reasons = ["capital_preservation", "strategic_repositioning", "risk_management", "better_opportunities"]
+                reason_weights = [1 - risk_tolerance, adaptability, 1 - risk_tolerance, self_interest]
+                unstake_reason = rng.choices(unstake_reasons, weights=reason_weights)[0]
+                
+                # Submit unstake action
+                ACTION_QUEUE.submit(Action(
+                    type="unstake",
+                    agent_id=agent.agent_id,
+                    payload={
+                        "proposal_id": unstake_proposal_id,
+                        "cp_amount": unstake_amount,
+                        "tick": tick,
+                        "issue_id": issue_id,
+                        "reason": unstake_reason
+                    }
+                ))
+                
+                # Signal ready and return (don't also do regular staking)
+                signal_ready_action(agent.agent_id, issue_id)
+                logger.info(f"[STAKE] {agent.agent_id} scored {unstake_score:.2f} vs roll {unstake_roll:.2f} → UNSTAKING {unstake_amount} CP from P{unstake_proposal_id} ({unstake_reason}) | Round {round_number}")
+                return {"ack": True}
+        
+        logger.info(f"[STAKE] {agent.agent_id} considered unstaking: {unstake_score:.2f} vs roll {unstake_roll:.2f} → NO UNSTAKE | Proceeding to regular staking")
     
     # Decision 2: Choose proposal to support
-    own_proposal_id = payload.get("current_proposal_id", f"P{agent.agent_id}")
     
     # First check: stake on own proposal?
     stake_on_own, score, roll = weighted_trait_decision(
