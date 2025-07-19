@@ -329,12 +329,12 @@ class StakePhase(Phase):
         if self.round_number == 1 and creditmgr:
             # Get all initial stakes from the ledger for this issue
             initial_stakes = [record for record in state.stake_ledger 
-                            if record["stake_type"] == "initial" and record["issue_id"] == config.issue_id]
+                            if record.initial_tick == 1 and record.issue_id == config.issue_id]
             
             for stake_record in initial_stakes:
-                agent_id = stake_record["staked_by"]
-                proposal_id = stake_record["proposal_id"]
-                stake_amount = stake_record["amount"]
+                agent_id = stake_record.agent_id
+                proposal_id = stake_record.proposal_id
+                stake_amount = stake_record.cp
                 
                 # Use creditmgr to properly update conviction tracking
                 creditmgr.update_conviction(
