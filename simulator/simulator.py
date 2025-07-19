@@ -82,7 +82,7 @@ def main():
     print(f"DEBUG: Loading config from: {args.config}")
     config = get_config_with_args(args.config, args)
     print(f"DEBUG: num_agents in loaded config: {config['simulation']['num_agents']}")
-    print(f"DEBUG: staking_rounds in loaded config: {config['consensus']['staking_rounds']}")
+    print(f"DEBUG: stake_phase_ticks in loaded config: {config['consensus']['stake_phase_ticks']}")
     
     # Generate or use provided simulation ID
     sim_id = args.sim_id if args.sim_id else generate_sim_id()
@@ -190,12 +190,17 @@ def main():
                     config['consensus']['revision_cycles']['min'],
                     config['consensus']['revision_cycles']['max']
                 ),
-                staking_rounds=random.randint(
-                    config['consensus']['staking_rounds']['min'],
-                    config['consensus']['staking_rounds']['max']
-                ),
                 conviction_params=config['consensus']['conviction_params'],
-                agent_pool=agent_pool
+                agent_pool=agent_pool,
+                # Phase timeout configurations
+                propose_phase_ticks=config['consensus']['propose_phase_ticks'],
+                feedback_phase_ticks=config['consensus']['feedback_phase_ticks'],
+                revise_phase_ticks=config['consensus']['revise_phase_ticks'],
+                stake_phase_ticks=random.randint(
+                    config['consensus']['stake_phase_ticks']['min'],
+                    config['consensus']['stake_phase_ticks']['max']
+                ),
+                finalize_phase_ticks=config['consensus']['finalize_phase_ticks']
             )
             
             primer = Primer(gc)

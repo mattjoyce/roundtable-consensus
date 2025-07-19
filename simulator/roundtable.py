@@ -4,10 +4,10 @@ from typing import List, Dict
 from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel, save_state_snapshot
 
 class Phase:
-    def __init__(self, phase_type: str, phase_number: int, max_think_ticks: int = 3):
+    def __init__(self, phase_type: str, phase_number: int, max_phase_ticks: int = 3):
         self.phase_type = phase_type
         self.phase_number = phase_number
-        self.max_think_ticks = max_think_ticks  
+        self.max_phase_ticks = max_phase_ticks  
     
     def execute(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
         """Execute phase with lifecycle: begin -> do -> finish."""
@@ -15,13 +15,9 @@ class Phase:
         if state.phase_tick == 1:
             self._begin(state, config, creditmgr)
         
-        # StakePhase needs creditmgr for auto conviction building
-        if isinstance(self, StakePhase):
-            self._do(state, agents, config, creditmgr)
-        else:
-            self._do(state, agents, config)
+        self._do(state, agents, config, creditmgr)
         
-        if state.phase_tick == self.max_think_ticks:
+        if state.phase_tick == self.max_phase_ticks:
             self._finish(state, config, creditmgr)
     
     def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
@@ -33,7 +29,7 @@ class Phase:
             payload={
                 "phase_number": self.phase_number,
                 "phase_type": self.phase_type,
-                "max_think_ticks": self.max_think_ticks,
+                "max_phase_ticks": self.max_phase_ticks,
                 "issue_id": config.issue_id
             },
             message=f"{self.phase_type} Phase [{self.phase_number}] beginning"
@@ -54,7 +50,7 @@ class Phase:
             message=f"{self.phase_type} Phase [{self.phase_number}] finishing at tick {state.phase_tick}"
         ))
     
-    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
         """Execute main phase logic."""
         raise NotImplementedError("Subclasses must implement _do")
     
@@ -67,8 +63,8 @@ class Phase:
         raise NotImplementedError("Subclasses must implement is_complete")
 
 class ProposePhase(Phase):
-    def __init__(self, phase_number: int, max_think_ticks: int = 3):
-        super().__init__("PROPOSE", phase_number, max_think_ticks)
+    def __init__(self, phase_number: int, max_phase_ticks: int = 3):
+        super().__init__("PROPOSE", phase_number, max_phase_ticks)
     
     def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
         """Create NoAction proposal #0."""
@@ -154,7 +150,7 @@ class ProposePhase(Phase):
                         message=f"Agent {agent_id} assigned to NoAction on timeout"
                     ))
     
-    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
         """Signal agents to make proposal decisions."""
         log_event(LogEntry(
             tick=state.tick,
@@ -162,15 +158,15 @@ class ProposePhase(Phase):
             event_type=EventType.PHASE_EXECUTION,
             payload={
                 "phase_number": self.phase_number,
-                "max_think_ticks": self.max_think_ticks
+                "max_phase_ticks": self.max_phase_ticks
             },
-            message=f"Executing Propose Phase [{self.phase_number}] with max think ticks {self.max_think_ticks}"
+            message=f"Executing Propose Phase [{self.phase_number}] with max think ticks {self.max_phase_ticks}"
         ))
         for agent in agents:
             agent.on_signal({
                 "type": "Propose",
                 "phase_number": self.phase_number,
-                "max_think_ticks": self.max_think_ticks,
+                "max_phase_ticks": self.max_phase_ticks,
                 "issue_id": config.issue_id
             })
     
@@ -179,8 +175,8 @@ class ProposePhase(Phase):
 
 class FeedbackPhase(Phase):
     def __init__(self, phase_number: int, cycle_number: int, feedback_stake: int, 
-                 max_feedback_per_agent: int, max_think_ticks: int = 3):
-        super().__init__("FEEDBACK", phase_number, max_think_ticks)
+                 max_feedback_per_agent: int, max_phase_ticks: int = 3):
+        super().__init__("FEEDBACK", phase_number, max_phase_ticks)
         self.cycle_number = cycle_number
         self.feedback_stake = feedback_stake
         self.max_feedback_per_agent = max_feedback_per_agent
@@ -208,7 +204,7 @@ class FeedbackPhase(Phase):
             message=f"Starting Feedback Phase [{self.phase_number}] for cycle {self.cycle_number}"
         ))
     
-    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
         """Signal agents to provide feedback and check for completion."""
         for agent in agents:
             # Get all available proposals for agent decision making
@@ -271,12 +267,12 @@ class FeedbackPhase(Phase):
 
 class RevisePhase(Phase):
     def __init__(self, phase_number: int, cycle_number: int, proposal_self_stake: int, 
-                 max_think_ticks: int = 3):
-        super().__init__("REVISE", phase_number, max_think_ticks)
+                 max_phase_ticks: int = 3):
+        super().__init__("REVISE", phase_number, max_phase_ticks)
         self.cycle_number = cycle_number
         self.proposal_self_stake = proposal_self_stake
     
-    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
         log_event(LogEntry(
             tick=state.tick,
             phase=PhaseType.REVISE,
@@ -316,48 +312,41 @@ class RevisePhase(Phase):
 
 class StakePhase(Phase):
     def __init__(self, phase_number: int, round_number: int, conviction_params: Dict[str, float], 
-                 max_think_ticks: int = 3):
-        super().__init__("STAKE", phase_number, max_think_ticks)
+                 max_phase_ticks: int = 3):
+        super().__init__("STAKE", phase_number, max_phase_ticks)
         self.round_number = round_number
         self.conviction_params = conviction_params
     
     def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
-        """Initialize stake phase and transfer initial proposal stakes on first round."""
+        """Initialize stake phase """
         super()._begin(state, config, creditmgr)
         
-        # Transfer initial proposal stakes to conviction tracking on first STAKE round
-        if self.round_number == 1 and creditmgr:
-            # Get all initial stakes from the ledger for this issue
-            initial_stakes = [record for record in state.stake_ledger 
-                            if record.initial_tick == 1 and record.issue_id == config.issue_id]
+        # # Transfer initial proposal stakes to conviction tracking on first STAKE round
+        # if self.round_number == 1 and creditmgr:
+        #     # Get all initial stakes from the ledger for this issue
+        #     initial_stakes = [record for record in state.stake_ledger 
+        #                     if record.initial_tick == 1 and record.issue_id == config.issue_id]
             
-            for stake_record in initial_stakes:
-                agent_id = stake_record.agent_id
-                proposal_id = stake_record.proposal_id
-                stake_amount = stake_record.cp
+        #     for stake_record in initial_stakes:
+        #         agent_id = stake_record.agent_id
+        #         proposal_id = stake_record.proposal_id
+        #         stake_amount = stake_record.cp
                 
-                # Use creditmgr to properly update conviction tracking
-                creditmgr.update_conviction(
-                    agent_id=agent_id,
-                    proposal_id=proposal_id,
-                    stake_amount=stake_amount,
-                    conviction_params=self.conviction_params,
-                    tick=state.tick,
-                    issue_id=config.issue_id
-                )
+        #         # NOTE: No longer needed - conviction calculated directly from stake records
+        #         # Initial stakes are already in the stake ledger, conviction calculated on-demand
                 
-                log_event(LogEntry(
-                    tick=state.tick,
-                    phase=PhaseType.STAKE,
-                    event_type=EventType.PROPOSAL_STAKE_TRANSFERRED,
-                    payload={
-                        "agent_id": agent_id,
-                        "proposal_id": proposal_id,
-                        "stake_amount": stake_amount,
-                        "issue_id": config.issue_id
-                    },
-                    message=f"Transferred initial proposal stake: {agent_id} {stake_amount} CP → {proposal_id} (Round 1)"
-                ))
+        #         log_event(LogEntry(
+        #             tick=state.tick,
+        #             phase=PhaseType.STAKE,
+        #             event_type=EventType.PROPOSAL_STAKE_TRANSFERRED,
+        #             payload={
+        #                 "agent_id": agent_id,
+        #                 "proposal_id": proposal_id,
+        #                 "stake_amount": stake_amount,
+        #                 "issue_id": config.issue_id
+        #             },
+        #             message=f"Transferred initial proposal stake: {agent_id} {stake_amount} CP → {proposal_id} (Round 1)"
+        #         ))
     
     def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
         """Signal agents to make staking decisions and automatically build conviction."""
@@ -373,25 +362,8 @@ class StakePhase(Phase):
             message=f"Executing Stake Phase [{self.phase_number}] for round {self.round_number} with conviction params {self.conviction_params}"
         ))
         
-        # Automatically build conviction for all existing positions
-        if creditmgr and self.round_number > 1:  # Skip auto-build on first round
-            conviction_built = creditmgr.auto_build_conviction(
-                conviction_params=self.conviction_params,
-                tick=state.tick,
-                issue_id=config.issue_id
-            )
-            if conviction_built > 0:
-                log_event(LogEntry(
-                    tick=state.tick,
-                    phase=PhaseType.STAKE,
-                    event_type=EventType.CONVICTION_UPDATED,
-                    payload={
-                        "total_conviction_built": conviction_built,
-                        "round_number": self.round_number,
-                        "auto_build": True
-                    },
-                    message=f"Auto-built {conviction_built} CP conviction for round {self.round_number}"
-                ))
+        # NOTE: Removed auto_build_conviction - conviction now calculated directly from stake records
+        # No artificial conviction building needed with atomic stake-based system
         
         for agent in agents:
             # Include current balance in the signal
@@ -402,15 +374,20 @@ class StakePhase(Phase):
             # Get all available proposals for agent decision making
             all_proposals = list(state.agent_proposal_ids.values())
             
-            # Get current conviction data for switching decisions
-            current_conviction = {}
-            for agent_id in state.conviction_ledger:
-                agent_convictions = {}
-                for proposal_id, conviction_amount in state.conviction_ledger[agent_id].items():
-                    if conviction_amount > 0:  # Only include active convictions
-                        agent_convictions[proposal_id] = conviction_amount
-                if agent_convictions:  # Only include agents with active convictions
-                    current_conviction[agent_id] = agent_convictions
+            # Get current conviction data for switching decisions (stake-based)
+            # current_conviction = {}
+            # for agent in agents:
+            #     agent_stakes = state.get_active_stakes_by_agent(agent.agent_id)
+            #     if agent_stakes:
+            #         agent_convictions = {}
+            #         for stake in agent_stakes:
+            #             conviction = creditmgr.calculate_stake_conviction(stake, state.tick, self.conviction_params)
+            #             if conviction > 0:
+            #                 if stake.proposal_id not in agent_convictions:
+            #                     agent_convictions[stake.proposal_id] = 0
+            #                 agent_convictions[stake.proposal_id] += conviction
+            #         if agent_convictions:
+            #             current_conviction[agent.agent_id] = agent_convictions
             
             agent.on_signal({
                 "type": "Stake",
@@ -421,22 +398,21 @@ class StakePhase(Phase):
                 "current_balance": current_balance,
                 "current_proposal_id": current_proposal_id,
                 "all_proposals": all_proposals,
-                "current_conviction": current_conviction
             })
     
     def is_complete(self, state: RoundtableState) -> bool:
         return True
 
 class FinalizePhase(Phase):
-    def __init__(self, phase_number: int, max_think_ticks: int = 3):
-        super().__init__("FINALIZE", phase_number, max_think_ticks)
+    def __init__(self, phase_number: int, max_phase_ticks: int = 3):
+        super().__init__("FINALIZE", phase_number, max_phase_ticks)
     
     def _begin(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
         """Initialize finalization phase."""
         super()._begin(state, config, creditmgr)
         # Additional finalization-specific initialization can go here
     
-    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig) -> None:
+    def _do(self, state: RoundtableState, agents: List[AgentActor], config: UnifiedConfig, creditmgr=None) -> None:
         """Signal agents about finalization and mark them ready."""
         # Signal agents about finalization phase
         for agent in agents:
@@ -466,7 +442,7 @@ def generate_phases(config: UnifiedConfig) -> List[Phase]:
     # 1. Initial PROPOSE phase
     phases.append(ProposePhase(
         phase_number=phase_counter,
-        max_think_ticks=3
+        max_phase_ticks=config.propose_phase_ticks
     ))
     phase_counter += 1
     
@@ -478,7 +454,7 @@ def generate_phases(config: UnifiedConfig) -> List[Phase]:
             cycle_number=cycle + 1,
             feedback_stake=config.feedback_stake,
             max_feedback_per_agent=config.max_feedback_per_agent,
-            max_think_ticks=3
+            max_phase_ticks=config.feedback_phase_ticks
         ))
         phase_counter += 1
         
@@ -487,38 +463,28 @@ def generate_phases(config: UnifiedConfig) -> List[Phase]:
             phase_number=phase_counter,
             cycle_number=cycle + 1,
             proposal_self_stake=config.proposal_self_stake,
-            max_think_ticks=3
+            max_phase_ticks=config.revise_phase_ticks
         ))
         phase_counter += 1
     
-    # 3. STAKE phases (initial self-stake + conviction rounds)
-    # Add TargetRounds to conviction_params to match staking_rounds
+    # 3. STAKE phase
+    # Add TargetRounds to conviction_params to match stake_phase_ticks
     conviction_params_with_target = config.conviction_params.copy()
-    conviction_params_with_target["TargetRounds"] = config.staking_rounds
+    conviction_params_with_target["TargetRounds"] = config.stake_phase_ticks
     
+    # Single stake phase that runs for stake_phase_ticks
     phases.append(StakePhase(
         phase_number=phase_counter,
-        round_number=1,
+        round_number=1,  # Single staking phase
         conviction_params=conviction_params_with_target,
-        max_think_ticks=3
+        max_phase_ticks=config.stake_phase_ticks
     ))
     phase_counter += 1
-    
-    # Additional stake rounds for conviction building
-    staking_rounds = config.staking_rounds
-    for stake_round in range(2, staking_rounds + 2):
-        phases.append(StakePhase(
-            phase_number=phase_counter,
-            round_number=stake_round,
-            conviction_params=conviction_params_with_target,
-            max_think_ticks=3
-        ))
-        phase_counter += 1
     
     # 4. FINALIZE phase
     phases.append(FinalizePhase(
         phase_number=phase_counter,
-        max_think_ticks=3
+        max_phase_ticks=config.finalize_phase_ticks
     ))
     
     return phases
@@ -568,7 +534,7 @@ class Consensus:
 
         # Phase complete: skip execution, advance phase
         current_phase = self.get_current_phase()
-        phase_ticks_expired = current_phase and self.state.phase_tick > current_phase.max_think_ticks
+        phase_ticks_expired = current_phase and self.state.phase_tick > current_phase.max_phase_ticks
         
         if self.all_agents_ready and phase_ticks_expired:
             log_event(LogEntry(
@@ -629,7 +595,7 @@ class Consensus:
         current_tick = self.state.tick
         start_tick = self.state.phase_start_tick
         phase = self.get_current_phase()
-        return (current_tick - start_tick) == phase.max_think_ticks
+        return (current_tick - start_tick) == phase.max_phase_ticks
     
     def set_agent_ready(self, agent_id: str):
         if agent_id in self.state.agent_readiness:

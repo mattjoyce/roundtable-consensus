@@ -15,6 +15,7 @@ class StakeRecord(BaseModel):
     initial_tick: int = Field(ge=1)
     status: Literal["active", "closed", "burned"] = "active"
     issue_id: str
+    mandatory: bool = False  # True for self-stakes when submitting proposals
 
 class Proposal(BaseModel):
     tick: int
@@ -109,9 +110,15 @@ class GlobalConfig(BaseModel):
     feedback_stake: int = Field(ge=1)
     proposal_self_stake: int = Field(ge=1)
     revision_cycles: int = Field(ge=1, lt=5)
-    staking_rounds: int = Field(ge=5, lt=11)
     conviction_params: Dict[str, float]
     agent_pool: AgentPool
+    
+    # Phase timeout configurations
+    propose_phase_ticks: int = Field(default=3, ge=1)
+    feedback_phase_ticks: int = Field(default=3, ge=1)
+    revise_phase_ticks: int = Field(default=3, ge=1)
+    stake_phase_ticks: int = Field(default=5, ge=1)
+    finalize_phase_ticks: int = Field(default=3, ge=1)
 
 class RunConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -135,9 +142,15 @@ class UnifiedConfig(BaseModel):
     feedback_stake: int = Field(ge=1)
     proposal_self_stake: int = Field(ge=1)
     revision_cycles: int = Field(ge=1, lt=5)
-    staking_rounds: int = Field(ge=5, lt=11)
     conviction_params: Dict[str, float]
     agent_pool: AgentPool
+    
+    # Phase timeout configurations
+    propose_phase_ticks: int = Field(default=3, ge=1)
+    feedback_phase_ticks: int = Field(default=3, ge=1)
+    revise_phase_ticks: int = Field(default=3, ge=1)
+    stake_phase_ticks: int = Field(default=5, ge=1)
+    finalize_phase_ticks: int = Field(default=3, ge=1)
     
     # From RunConfig - Simulation-specific settings
     seed: int
@@ -160,9 +173,14 @@ class UnifiedConfig(BaseModel):
             feedback_stake=global_config.feedback_stake,
             proposal_self_stake=global_config.proposal_self_stake,
             revision_cycles=global_config.revision_cycles,
-            staking_rounds=global_config.staking_rounds,
             conviction_params=global_config.conviction_params,
             agent_pool=global_config.agent_pool,
+            # Phase timeout configurations
+            propose_phase_ticks=global_config.propose_phase_ticks,
+            feedback_phase_ticks=global_config.feedback_phase_ticks,
+            revise_phase_ticks=global_config.revise_phase_ticks,
+            stake_phase_ticks=global_config.stake_phase_ticks,
+            finalize_phase_ticks=global_config.finalize_phase_ticks,
             # RunConfig fields
             seed=run_config.seed,
             issue_id=run_config.issue_id,
@@ -190,11 +208,7 @@ class RoundtableState(BaseModel):
     
     # Credit and conviction tracking
     credit_events: List[Dict] = []  # Credit burn/award history
-    stake_ledger: List[StakeRecord] = []  # Atomic stake records
-    conviction_ledger: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> total conviction
-    conviction_rounds: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> consecutive rounds
-    conviction_rounds_held: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> total rounds held
-    original_stakes: Dict[str, Dict[int, int]] = Field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))  # agent_id -> proposal_id -> original stake amount
+    stake_ledger: List[StakeRecord] = []  # Atomic stake records - all conviction calculated from this
     
     # Issue and proposal state
     current_issue: Optional['Issue'] = None
@@ -223,26 +237,13 @@ class RoundtableState(BaseModel):
                 if stake.agent_id == agent_id and stake.proposal_id == proposal_id and stake.status == "active"]
     
     def get_mandatory_stakes(self) -> List[StakeRecord]:
-        """Get all mandatory (tick=1) stakes."""
+        """Get all mandatory stakes."""
         return [stake for stake in self.stake_ledger 
-                if stake.initial_tick == 1 and stake.status == "active"]
+                if stake.mandatory and stake.status == "active"]
     
     def serialize_for_snapshot(self) -> dict:
         """Serialize state for database snapshot storage."""
         import json
-        
-        # Convert defaultdict to regular dict for JSON serialization
-        conviction_ledger_dict = {}
-        for agent_id, proposals in self.conviction_ledger.items():
-            conviction_ledger_dict[agent_id] = dict(proposals)
-        
-        conviction_rounds_dict = {}
-        for agent_id, proposals in self.conviction_rounds.items():
-            conviction_rounds_dict[agent_id] = dict(proposals)
-        
-        conviction_rounds_held_dict = {}
-        for agent_id, proposals in self.conviction_rounds_held.items():
-            conviction_rounds_held_dict[agent_id] = dict(proposals)
         
         return {
             "tick": self.tick,
@@ -251,10 +252,6 @@ class RoundtableState(BaseModel):
             "agent_balances": json.dumps(self.agent_balances),
             "agent_readiness": json.dumps(self.agent_readiness),
             "agent_proposal_ids": json.dumps(self.agent_proposal_ids),
-            "conviction_ledger": json.dumps(conviction_ledger_dict),
-            "conviction_rounds": json.dumps(conviction_rounds_dict),
-            "conviction_rounds_held": json.dumps(conviction_rounds_held_dict),
-            "original_stakes": json.dumps({agent_id: dict(proposals) for agent_id, proposals in self.original_stakes.items()}),
             "stake_ledger": json.dumps([stake.model_dump() for stake in self.stake_ledger]),
             "credit_events": json.dumps(self.credit_events),
             "execution_ledger": json.dumps(self.execution_ledger),

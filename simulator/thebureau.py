@@ -723,6 +723,25 @@ class TheBureau:
         issue_id = payload.get("issue_id")
         choice_reason = payload.get("choice_reason", "unknown")
 
+        # Validation: Check stake amount is valid
+        if not stake_amount or stake_amount <= 0:
+            log_event(
+                LogEntry(
+                    tick=tick,
+                    phase=(self.state.current_phase if self.current_consensus else None),
+                    event_type=EventType.STAKE_REJECTED,
+                    agent_id=agent_id,
+                    payload={
+                        "reason": "invalid_stake_amount",
+                        "stake_amount": stake_amount,
+                        "proposal_id": proposal_id,
+                    },
+                    message=f"Rejected stake from {agent_id}: Invalid stake amount {stake_amount}",
+                    level=LogLevel.WARNING,
+                )
+            )
+            return
+
         log_event(
             LogEntry(
                 tick=tick,
@@ -770,27 +789,40 @@ class TheBureau:
             )
             return
 
-        # Attempt to deduct CP
-        deduct_success = self.creditmgr.attempt_deduct(
+        # Attempt to stake CP (not burn - recoverable until finalize)
+        deduct_success = self.creditmgr.stake_credits(
             agent_id=agent_id,
             amount=stake_amount,
-            reason=f"Conviction stake (Round {round_number})",
+            reason=f"Voluntary stake (Round {round_number})",
             tick=tick,
             issue_id=issue_id,
         )
 
         if deduct_success:
+            # Create voluntary stake record in the stake ledger
+            from models import StakeRecord
+            stake_record = StakeRecord(
+                agent_id=agent_id,
+                proposal_id=int(proposal_id),
+                cp=stake_amount,
+                initial_tick=tick,
+                status="active",
+                issue_id=issue_id,
+                mandatory=False  # Voluntary stakes are not mandatory
+            )
+            self.state.stake_ledger.append(stake_record)
+            
             # Get conviction parameters from current consensus
             conviction_params = {}
             if self.current_consensus:
                 conviction_params = self.config.conviction_params.copy()
                 # Set TargetRounds to match the actual staking rounds from config
-                conviction_params["TargetRounds"] = self.config.staking_rounds
+                conviction_params["TargetRounds"] = self.config.stake_phase_ticks
 
-            # Update conviction tracking and get conviction details
-            conviction_details = self.creditmgr.update_conviction(
+            # Calculate conviction details using pure stake-based calculations
+            conviction_details = self.creditmgr.calculate_stake_conviction_details(
                 agent_id=agent_id,
-                proposal_id=proposal_id,
+                proposal_id=int(proposal_id),
                 stake_amount=stake_amount,
                 conviction_params=conviction_params,
                 tick=tick,
@@ -819,8 +851,8 @@ class TheBureau:
                         "issue_id": issue_id,
                     },
                     message=(
-                        f"Stake recorded: {agent_id} staked {stake_amount} CP on {proposal_id} "
-                        f"(Round {round_number}, {choice_reason}) - Effective weight: "
+                        f"Voluntary stake recorded: {agent_id} staked {stake_amount} CP on {proposal_id} "
+                        f"(Round {round_number}, {choice_reason}, recoverable until finalize) - Effective weight: "
                         f"{conviction_details['effective_weight']} (×{conviction_details['multiplier']})"
                     ),
                 )

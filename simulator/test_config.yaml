@@ -26,9 +26,14 @@ consensus:
   revision_cycles:
     min: 2
     max: 4
-  staking_rounds:
+  stake_phase_ticks:
     min: 10
     max: 10
+  # Phase timeout configurations
+  propose_phase_ticks: 5
+  feedback_phase_ticks: 4
+  revise_phase_ticks: 4
+  finalize_phase_ticks: 2
   conviction_params:
     MaxMultiplier: 2.0
     TargetFraction: 0.98
