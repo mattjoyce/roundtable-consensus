@@ -14,9 +14,9 @@ def one_shot(system: str, context: str, prompt: str, model: str = "gemma3n:e4b",
         seed: Random seed for deterministic generation (optional)
     """
 
-    print(f"system: {system}")
-    print(f"context: {context}")
-    print(f"prompt: {prompt}")
+    # print(f"system: {system}")
+    # print(f"context: {context}")
+    # print(f"prompt: {prompt}")
 
     messages = [
         {"role": "system", "content": system},
