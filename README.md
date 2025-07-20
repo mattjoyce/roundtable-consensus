@@ -2,9 +2,12 @@
 
 > **Transparent, deterministic democratic decision‑making for mixed AI‑human teams**
 
-> \[!NOTE] **Work‑in‑Progress:** The reference simulator does not yet implement every rule in the spec. Expect breaking changes until we reach **v1.1.0**.
+> \[!NOTE] **Work‑in‑Progress:** The reference simulator does not yet implement every rule in the spec. Expect breaking changes until we reach **v1.2.0**.
 
 ---
+[round-table-consensus](https://github.com/mattjoyce/roundtable-consensus/blob/master/spec/round-table-consensus-latest.md)
+---
+
 
 ## Why Round Table Consensus?
 
