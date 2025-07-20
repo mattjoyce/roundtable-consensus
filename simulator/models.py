@@ -121,7 +121,7 @@ class GlobalConfig(BaseModel):
     finalize_phase_ticks: int = Field(default=3, ge=1)
     
     # LLM configuration
-    llm_config: Dict[str, bool] = Field(default_factory=dict)
+    llm_config: Dict[str, Any] = Field(default_factory=dict)
 
 class RunConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -156,7 +156,7 @@ class UnifiedConfig(BaseModel):
     finalize_phase_ticks: int = Field(default=3, ge=1)
     
     # LLM configuration
-    llm_config: Dict[str, bool] = Field(default_factory=dict)
+    llm_config: Dict[str, Any] = Field(default_factory=dict)
     
     # From RunConfig - Simulation-specific settings
     seed: int

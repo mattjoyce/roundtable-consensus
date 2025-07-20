@@ -168,7 +168,8 @@ class ProposePhase(Phase):
                 "phase_number": self.phase_number,
                 "max_phase_ticks": self.max_phase_ticks,
                 "issue_id": config.issue_id,
-                "use_llm_proposal": config.llm_config.get('proposal', False)
+                "use_llm_proposal": config.llm_config.get('proposal', False),
+                "model": config.llm_config.get('model', 'gemma3n:e4b')
             })
     
     def is_complete(self, state: RoundtableState) -> bool:
@@ -235,7 +236,10 @@ class FeedbackPhase(Phase):
                 "all_proposals": all_proposals,
                 "current_proposal_id": current_proposal_id,
                 "use_llm_feedback": config.llm_config.get('feedback', False),
-                "all_proposal_contents": all_proposal_contents
+                "model": config.llm_config.get('model', 'gemma3n:e4b'),
+                "all_proposal_contents": all_proposal_contents,
+                "state": state,  # Add state for context building
+                "agent_pool": config.agent_pool  # Add agent pool for trait display
             })
     
     def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:

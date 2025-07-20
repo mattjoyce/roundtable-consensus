@@ -76,19 +76,20 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def generate_issue_content(seed: int) -> str:
+def generate_issue_content(seed: int, model: str = "gemma3n:e4b") -> str:
     """
     Generate a realistic IT problem statement using LLM.
     
     Args:
         seed: Random seed for deterministic generation
+        model: LLM model to use
     
     Returns:
         Generated problem statement
     """
     try:
         prompt = load_prompt("issue")
-        return one_shot("", "", prompt, seed=seed)
+        return one_shot("", "", prompt, model=model, seed=seed)
     except Exception as e:
         logger.warning(f"LLM issue generation failed: {e}, falling back to default")
         return "A critical system issue requires team consensus to resolve."
@@ -234,7 +235,8 @@ def main():
             # Create a sample issue for the simulation
             # Use LLM-generated problem statement if enabled, otherwise use config
             if config.get('llm', {}).get('issue', False):
-                problem_statement = generate_issue_content(scenario_seed)
+                model = config.get('llm', {}).get('model', 'gemma3n:e4b')
+                problem_statement = generate_issue_content(scenario_seed, model)
                 if not args.quiet:
                     logger.info(f"Generated LLM issue: {problem_statement[:50]}...")
             else:
