@@ -167,7 +167,8 @@ class ProposePhase(Phase):
                 "type": "Propose",
                 "phase_number": self.phase_number,
                 "max_phase_ticks": self.max_phase_ticks,
-                "issue_id": config.issue_id
+                "issue_id": config.issue_id,
+                "use_llm_proposal": config.llm_config.get('proposal', False)
             })
     
     def is_complete(self, state: RoundtableState) -> bool:
@@ -218,6 +219,13 @@ class FeedbackPhase(Phase):
                     self.signal_ready(agent.agent_id, state)
                     continue
             
+            # Get proposal contents for LLM feedback generation
+            all_proposal_contents = {}
+            if state.current_issue:
+                for proposal in state.current_issue.proposals:
+                    if proposal.active:
+                        all_proposal_contents[proposal.proposal_id] = proposal.content
+            
             agent.on_signal({
                 "type": "Feedback",
                 "cycle_number": self.cycle_number,
@@ -225,7 +233,9 @@ class FeedbackPhase(Phase):
                 "issue_id": config.issue_id,
                 "max_feedback": self.max_feedback_per_agent,
                 "all_proposals": all_proposals,
-                "current_proposal_id": current_proposal_id
+                "current_proposal_id": current_proposal_id,
+                "use_llm_feedback": config.llm_config.get('feedback', False),
+                "all_proposal_contents": all_proposal_contents
             })
     
     def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
@@ -428,10 +438,263 @@ class FinalizePhase(Phase):
             state.agent_readiness[agent.agent_id] = True
     
     def _finish(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
-        """Complete finalization phase."""
+        """Complete finalization phase and execute finalization logic."""
         super()._finish(state, config, creditmgr)
-        # Additional finalization-specific cleanup can go here
+        
+        # Execute the actual finalization logic to calculate conviction multipliers and determine winner
+        # Need to get the consensus instance to call finalize_issue()
+        # For now, we'll inline the finalization logic here
+        self._execute_finalization(state, config, creditmgr)
     
+    def _execute_finalization(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None) -> None:
+        """Execute finalization logic using stake records."""
+        issue_id = config.issue_id
+        tick = state.tick
+        
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.FINALIZATION_START,
+            payload={
+            "issue_id": issue_id
+            },
+            message=f"Starting finalization for issue {issue_id} at tick {tick}"
+        ))
+        
+        # Aggregate conviction weights by proposal using latest stake records
+        proposal_weights = self._aggregate_conviction_weights_inline(state, config, creditmgr)
+        
+        if not proposal_weights:
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType.FINALIZE,
+                event_type=EventType.FINALIZATION_WARNING,
+                payload={
+                    "issue_id": issue_id,
+                    "reason": "no_stakes_found"
+                },
+                message="No conviction stakes found for finalization"
+            ))
+            return
+        
+        # Determine winner with tie-breaking
+        winner_proposal_id, winner_data = self._determine_winner_inline(proposal_weights)
+        
+        # Emit finalization decision event
+        self._emit_finalization_decision_inline(winner_proposal_id, winner_data, issue_id, tick, state)
+        
+        # Emit influence recorded events for winning proposal
+        self._emit_influence_events_inline(winner_proposal_id, issue_id, tick, state, config, creditmgr)
+        
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.FINALIZATION_COMPLETE,
+            payload={
+            "issue_id": issue_id,
+            "winner_proposal_id": winner_proposal_id
+            },
+            message=f"Finalization completed for issue {issue_id} - Winner: {winner_proposal_id}"
+        ))
+    
+    def _aggregate_conviction_weights_inline(self, state: RoundtableState, config: UnifiedConfig, creditmgr=None):
+        """Aggregate effective weights by proposal using latest stake records."""
+        proposal_weights = {}
+        conviction_params = config.conviction_params
+        current_tick = state.tick
+        
+        # Find the first stake phase tick for mandatory stake time calculation
+        first_stake_tick = None
+        for phase_entry in state.execution_ledger:
+            if phase_entry.get("phase") == "STAKE":
+                first_stake_tick = phase_entry["tick"]
+                break
+        
+        if first_stake_tick is None:
+            # Fallback if no stake phase found in ledger
+            first_stake_tick = current_tick
+        
+        # Get all active stakes for this issue
+        active_stakes = [stake for stake in state.stake_ledger 
+                        if stake.status == "active" and stake.issue_id == config.issue_id]
+        
+        # Group stakes by proposal and calculate conviction multipliers
+        for stake in active_stakes:
+            proposal_id = stake.proposal_id
+            
+            # Calculate time held based on stake type
+            if stake.mandatory:
+                # Mandatory stakes use time from first stake phase tick
+                time_held = current_tick - first_stake_tick
+            else:
+                # Voluntary stakes use time from their initial tick (during stake phases)
+                time_held = current_tick - stake.initial_tick
+            
+            # Calculate conviction multiplier for this stake
+            growth_multiplier = creditmgr.calculate_growth_curve(time_held, conviction_params)
+            effective_weight = round(stake.cp * growth_multiplier, 2)
+            
+            if proposal_id not in proposal_weights:
+                proposal_weights[proposal_id] = {
+                    "total_effective_weight": 0,
+                    "total_raw_weight": 0,
+                    "contributor_count": 0,
+                    "first_stake_tick": stake.initial_tick if not stake.mandatory else first_stake_tick
+                }
+            
+            proposal_weights[proposal_id]["total_effective_weight"] += effective_weight
+            proposal_weights[proposal_id]["total_raw_weight"] += stake.cp
+            proposal_weights[proposal_id]["contributor_count"] += 1
+            
+            # Track earliest stake tick for tie-breaking (use first stake tick for mandatory)
+            stake_tick = first_stake_tick if stake.mandatory else stake.initial_tick
+            if stake_tick < proposal_weights[proposal_id]["first_stake_tick"]:
+                proposal_weights[proposal_id]["first_stake_tick"] = stake_tick
+        
+        return proposal_weights
+    
+    def _determine_winner_inline(self, proposal_weights):
+        """Determine winning proposal with tie-breaking by earliest stake."""
+        if not proposal_weights:
+            return None, None
+        
+        # Find proposal with highest effective weight
+        max_weight = max(data["total_effective_weight"] for data in proposal_weights.values())
+        
+        # Get all proposals with max weight (for tie-breaking)
+        tied_proposals = [
+            (pid, data) for pid, data in proposal_weights.items()
+            if data["total_effective_weight"] == max_weight
+        ]
+        
+        # Tie-breaker: earliest first stake tick
+        winner_proposal_id, winner_data = min(tied_proposals, key=lambda x: x[1]["first_stake_tick"])
+        
+        return winner_proposal_id, winner_data
+    
+    def _emit_finalization_decision_inline(self, winner_proposal_id, winner_data, issue_id, tick, state):
+        """Emit the finalization decision event."""
+        # Look up the proposal to get the author
+        agent_id = "unknown"
+        if winner_proposal_id == 0:
+            agent_id = "system"  # NoAction proposal
+        else:
+            # Find the proposal by ID to get the author
+            if state.current_issue:
+                for proposal in state.current_issue.proposals:
+                    if proposal.proposal_id == winner_proposal_id:
+                        agent_id = proposal.author
+                        break
+        
+        finalization_event = {
+            "type": "finalization_decision",
+            "agent_id": agent_id,
+            "amount": 0,  # No credit change
+            "reason": f"Proposal {winner_proposal_id} declared winner with {winner_data['total_effective_weight']} CP effective weight.",
+            "tick": tick,
+            "issue_id": issue_id,
+            "proposal_id": winner_proposal_id,
+            "effective_weight": winner_data["total_effective_weight"],
+            "raw_weight": winner_data["total_raw_weight"],
+            "final_tick": tick
+        }
+        
+        state.credit_events.append(finalization_event)
+        
+        log_event(LogEntry(
+            tick=tick,
+            phase=PhaseType.FINALIZE,
+            event_type=EventType.FINALIZATION_DECISION,
+            payload={
+            "proposal_id": winner_proposal_id,
+            "agent_id": agent_id,
+            "effective_weight": winner_data["total_effective_weight"],
+            "raw_weight": winner_data["total_raw_weight"],
+            "contributor_count": winner_data["contributor_count"],
+            "final_tick": tick,
+            "issue_id": issue_id
+            },
+            message=finalization_event["reason"]
+        ))
+    
+    def _emit_influence_events_inline(self, winner_proposal_id, issue_id, tick, state, config, creditmgr):
+        """Emit influence recorded events for each agent's contribution to winning proposal."""
+        conviction_params = config.conviction_params
+        current_tick = state.tick
+        
+        # Find the first stake phase tick for mandatory stake time calculation
+        first_stake_tick = None
+        for phase_entry in state.execution_ledger:
+            if phase_entry.get("phase") == "STAKE":
+                first_stake_tick = phase_entry["tick"]
+                break
+        
+        if first_stake_tick is None:
+            first_stake_tick = current_tick
+        
+        # Get all active stakes for winning proposal
+        winning_stakes = [stake for stake in state.stake_ledger 
+                         if stake.status == "active" 
+                         and stake.issue_id == issue_id 
+                         and stake.proposal_id == winner_proposal_id]
+        
+        # Group stakes by agent and calculate their contributions
+        agent_contributions = {}
+        for stake in winning_stakes:
+            agent_id = stake.agent_id
+            
+            # Calculate time held based on stake type
+            if stake.mandatory:
+                time_held = current_tick - first_stake_tick
+            else:
+                time_held = current_tick - stake.initial_tick
+            
+            # Calculate conviction multiplier for this stake
+            growth_multiplier = creditmgr.calculate_growth_curve(time_held, conviction_params)
+            effective_weight = round(stake.cp * growth_multiplier, 2)
+            
+            if agent_id not in agent_contributions:
+                agent_contributions[agent_id] = {
+                    "raw_stake": 0,
+                    "effective_contribution": 0,
+                    "multiplier": growth_multiplier  # Store last multiplier for logging
+                }
+            
+            agent_contributions[agent_id]["raw_stake"] += stake.cp
+            agent_contributions[agent_id]["effective_contribution"] += effective_weight
+        
+        # Emit influence events for each contributing agent
+        for agent_id, contrib_data in agent_contributions.items():
+            influence_event = {
+                "type": "influence_recorded",
+                "agent_id": agent_id,
+                "amount": 0,  # No credit change
+                "reason": f"Agent {agent_id} contributed {contrib_data['effective_contribution']} CP effective weight to winning proposal {winner_proposal_id}",
+                "tick": tick,
+                "issue_id": issue_id,
+                "winning_proposal_id": winner_proposal_id,
+                "contribution": contrib_data["effective_contribution"],
+                "raw_stake": contrib_data["raw_stake"],
+                "multiplier": contrib_data["multiplier"]
+            }
+            
+            state.credit_events.append(influence_event)
+            
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType.FINALIZE,
+                event_type=EventType.INFLUENCE_RECORDED,
+                payload={
+                    "winning_proposal_id": winner_proposal_id,
+                    "agent_id": agent_id,
+                    "contribution": contrib_data["effective_contribution"],
+                    "raw_stake": contrib_data["raw_stake"],
+                    "multiplier": contrib_data["multiplier"],
+                    "issue_id": issue_id
+                },
+                message=influence_event["reason"]
+            ))
+
     def is_complete(self, state: RoundtableState) -> bool:
         return True
 
@@ -683,31 +946,58 @@ class Consensus:
         ))
     
     def _aggregate_conviction_weights(self):
-        """Aggregate effective weights by proposal from shared state conviction tracking."""
+        """Aggregate effective weights by proposal using latest stake records."""
         proposal_weights = {}
         conviction_params = self.config.conviction_params
+        current_tick = self.state.tick
         
-        # Iterate through all agent conviction data
-        for agent_id in self.state.conviction_ledger:
-            for proposal_id, total_stake in self.state.conviction_ledger[agent_id].items():
-                if total_stake > 0:  # Only include proposals with actual stakes
-                    # Calculate effective weight using current conviction multiplier
-                    multiplier = self.creditmgr.calculate_conviction_multiplier(
-                        agent_id, proposal_id, conviction_params
-                    )
-                    effective_weight = round(total_stake * multiplier, 2)
-                    
-                    if proposal_id not in proposal_weights:
-                        proposal_weights[proposal_id] = {
-                            "total_effective_weight": 0,
-                            "total_raw_weight": 0,
-                            "contributor_count": 0,
-                            "first_stake_tick": float('inf')  # Will need to track this separately if needed
-                        }
-                    
-                    proposal_weights[proposal_id]["total_effective_weight"] += effective_weight
-                    proposal_weights[proposal_id]["total_raw_weight"] += total_stake
-                    proposal_weights[proposal_id]["contributor_count"] += 1
+        # Find the first stake phase tick for mandatory stake time calculation
+        first_stake_tick = None
+        for phase_entry in self.state.execution_ledger:
+            if phase_entry.get("phase") == "STAKE":
+                first_stake_tick = phase_entry["tick"]
+                break
+        
+        if first_stake_tick is None:
+            # Fallback if no stake phase found in ledger
+            first_stake_tick = current_tick
+        
+        # Get all active stakes for this issue
+        active_stakes = [stake for stake in self.state.stake_ledger 
+                        if stake.status == "active" and stake.issue_id == self.config.issue_id]
+        
+        # Group stakes by proposal and calculate conviction multipliers
+        for stake in active_stakes:
+            proposal_id = stake.proposal_id
+            
+            # Calculate time held based on stake type
+            if stake.mandatory:
+                # Mandatory stakes use time from first stake phase tick
+                time_held = current_tick - first_stake_tick
+            else:
+                # Voluntary stakes use time from their initial tick (during stake phases)
+                time_held = current_tick - stake.initial_tick
+            
+            # Calculate conviction multiplier for this stake
+            growth_multiplier = self.creditmgr.calculate_growth_curve(time_held, conviction_params)
+            effective_weight = round(stake.cp * growth_multiplier, 2)
+            
+            if proposal_id not in proposal_weights:
+                proposal_weights[proposal_id] = {
+                    "total_effective_weight": 0,
+                    "total_raw_weight": 0,
+                    "contributor_count": 0,
+                    "first_stake_tick": stake.initial_tick if not stake.mandatory else first_stake_tick
+                }
+            
+            proposal_weights[proposal_id]["total_effective_weight"] += effective_weight
+            proposal_weights[proposal_id]["total_raw_weight"] += stake.cp
+            proposal_weights[proposal_id]["contributor_count"] += 1
+            
+            # Track earliest stake tick for tie-breaking (use first stake tick for mandatory)
+            stake_tick = first_stake_tick if stake.mandatory else stake.initial_tick
+            if stake_tick < proposal_weights[proposal_id]["first_stake_tick"]:
+                proposal_weights[proposal_id]["first_stake_tick"] = stake_tick
         
         return proposal_weights
     
@@ -778,48 +1068,81 @@ class Consensus:
     
     def _emit_influence_events(self, winner_proposal_id, issue_id, tick):
         """Emit influence recorded events for each agent's contribution to winning proposal."""
-        conviction_params = self.gc.conviction_params
+        conviction_params = self.config.conviction_params
+        current_tick = self.state.tick
         
-        # Calculate each agent's contribution to the winning proposal
-        for agent_id in self.creditmgr.conviction_ledger:
-            total_stake = self.creditmgr.conviction_ledger[agent_id].get(winner_proposal_id, 0)
+        # Find the first stake phase tick for mandatory stake time calculation
+        first_stake_tick = None
+        for phase_entry in self.state.execution_ledger:
+            if phase_entry.get("phase") == "STAKE":
+                first_stake_tick = phase_entry["tick"]
+                break
+        
+        if first_stake_tick is None:
+            first_stake_tick = current_tick
+        
+        # Get all active stakes for winning proposal
+        winning_stakes = [stake for stake in self.state.stake_ledger 
+                         if stake.status == "active" 
+                         and stake.issue_id == issue_id 
+                         and stake.proposal_id == winner_proposal_id]
+        
+        # Group stakes by agent and calculate their contributions
+        agent_contributions = {}
+        for stake in winning_stakes:
+            agent_id = stake.agent_id
             
-            if total_stake > 0:
-                # Calculate effective weight for this agent's contribution
-                multiplier = self.creditmgr.calculate_conviction_multiplier(
-                    agent_id, winner_proposal_id, conviction_params
-                )
-                effective_contribution = round(total_stake * multiplier, 2)
-                
-                influence_event = {
-                    "type": "influence_recorded",
-                    "agent_id": agent_id,
-                    "amount": 0,  # No credit change
-                    "reason": f"Agent {agent_id} contributed {effective_contribution} CP effective weight to winning proposal {winner_proposal_id}",
-                    "tick": tick,
-                    "issue_id": issue_id,
-                    "winning_proposal_id": winner_proposal_id,
-                    "contribution": effective_contribution,
-                    "raw_stake": total_stake,
-                    "multiplier": multiplier
+            # Calculate time held based on stake type
+            if stake.mandatory:
+                time_held = current_tick - first_stake_tick
+            else:
+                time_held = current_tick - stake.initial_tick
+            
+            # Calculate conviction multiplier for this stake
+            growth_multiplier = self.creditmgr.calculate_growth_curve(time_held, conviction_params)
+            effective_weight = round(stake.cp * growth_multiplier, 2)
+            
+            if agent_id not in agent_contributions:
+                agent_contributions[agent_id] = {
+                    "raw_stake": 0,
+                    "effective_contribution": 0,
+                    "multiplier": growth_multiplier  # Store last multiplier for logging
                 }
-                
-                self.creditmgr.events.append(influence_event)
-                
-                log_event(LogEntry(
-                    tick=tick,
-                    phase=PhaseType.FINALIZE,
-                    event_type=EventType.INFLUENCE_RECORDED,
-                    payload={
-                        "winning_proposal_id": winner_proposal_id,
-                        "agent_id": agent_id,
-                        "contribution": effective_contribution,
-                        "raw_stake": total_stake,
-                        "multiplier": multiplier,
-                        "issue_id": issue_id
-                    },
-                    message=influence_event["reason"]
-                ))
+            
+            agent_contributions[agent_id]["raw_stake"] += stake.cp
+            agent_contributions[agent_id]["effective_contribution"] += effective_weight
+        
+        # Emit influence events for each contributing agent
+        for agent_id, contrib_data in agent_contributions.items():
+            influence_event = {
+                "type": "influence_recorded",
+                "agent_id": agent_id,
+                "amount": 0,  # No credit change
+                "reason": f"Agent {agent_id} contributed {contrib_data['effective_contribution']} CP effective weight to winning proposal {winner_proposal_id}",
+                "tick": tick,
+                "issue_id": issue_id,
+                "winning_proposal_id": winner_proposal_id,
+                "contribution": contrib_data["effective_contribution"],
+                "raw_stake": contrib_data["raw_stake"],
+                "multiplier": contrib_data["multiplier"]
+            }
+            
+            self.state.credit_events.append(influence_event)
+            
+            log_event(LogEntry(
+                tick=tick,
+                phase=PhaseType.FINALIZE,
+                event_type=EventType.INFLUENCE_RECORDED,
+                payload={
+                    "winning_proposal_id": winner_proposal_id,
+                    "agent_id": agent_id,
+                    "contribution": contrib_data["effective_contribution"],
+                    "raw_stake": contrib_data["raw_stake"],
+                    "multiplier": contrib_data["multiplier"],
+                    "issue_id": issue_id
+                },
+                message=influence_event["reason"]
+            ))
     
     def _emit_no_winner_event(self, issue_id, tick):
         """Emit event when no winner can be determined."""
@@ -933,59 +1256,99 @@ class Consensus:
         print(f"\n🌊 INFLUENCE FLOW ANALYSIS:")
         print("-" * 70)
         
-        conviction_params = self.gc.conviction_params
+        conviction_params = self.config.conviction_params
+        current_tick = self.state.tick
+        
+        # Find the first stake phase tick for mandatory stake time calculation
+        first_stake_tick = None
+        for phase_entry in self.state.execution_ledger:
+            if phase_entry.get("phase") == "STAKE":
+                first_stake_tick = phase_entry["tick"]
+                break
+        
+        if first_stake_tick is None:
+            first_stake_tick = current_tick
         
         # Show detailed influence flow for each proposal
         for proposal_id, data in ranked_proposals:
             formatted_proposal = self._format_proposal_display(proposal_id, issue_id)
             print(f"\n📋 {formatted_proposal}:")
             
-            # Find all agents who supported this proposal
-            supporters = []
-            for agent_id in self.creditmgr.conviction_ledger:
-                stake = self.creditmgr.conviction_ledger[agent_id].get(proposal_id, 0)
-                if stake > 0:
-                    multiplier = self.creditmgr.calculate_conviction_multiplier(
-                        agent_id, proposal_id, conviction_params
-                    )
-                    effective = round(stake * multiplier, 2)
-                    consecutive_rounds = self.creditmgr.conviction_rounds[agent_id][proposal_id]
-                    supporters.append((agent_id, stake, multiplier, effective, consecutive_rounds))
+            # Find all stakes for this proposal
+            proposal_stakes = [stake for stake in self.state.stake_ledger 
+                             if stake.status == "active" 
+                             and stake.issue_id == issue_id 
+                             and stake.proposal_id == proposal_id]
             
-            if supporters:
+            # Group stakes by agent and calculate their contributions
+            agent_contributions = {}
+            for stake in proposal_stakes:
+                agent_id = stake.agent_id
+                
+                # Calculate time held based on stake type
+                if stake.mandatory:
+                    time_held = current_tick - first_stake_tick
+                else:
+                    time_held = current_tick - stake.initial_tick
+                
+                # Calculate conviction multiplier for this stake
+                growth_multiplier = self.creditmgr.calculate_growth_curve(time_held, conviction_params)
+                effective_weight = round(stake.cp * growth_multiplier, 2)
+                
+                if agent_id not in agent_contributions:
+                    agent_contributions[agent_id] = {
+                        "raw_stake": 0,
+                        "effective_contribution": 0,
+                        "multiplier": growth_multiplier,
+                        "stake_count": 0
+                    }
+                
+                agent_contributions[agent_id]["raw_stake"] += stake.cp
+                agent_contributions[agent_id]["effective_contribution"] += effective_weight
+                agent_contributions[agent_id]["stake_count"] += 1
+            
+            if agent_contributions:
                 # Sort by effective contribution (highest first)
+                supporters = [(agent_id, data["raw_stake"], data["multiplier"], 
+                             data["effective_contribution"], data["stake_count"]) 
+                            for agent_id, data in agent_contributions.items()]
                 supporters.sort(key=lambda x: x[3], reverse=True)
-                for agent_id, raw_stake, multiplier, effective, rounds in supporters:
-                    print(f"   {agent_id:<20} {raw_stake:>6} CP × {multiplier:>5.3f} = {effective:>8.2f} CP  ({rounds} rounds)")
+                
+                for agent_id, raw_stake, multiplier, effective, stake_count in supporters:
+                    print(f"   {agent_id:<20} {raw_stake:>6} CP × {multiplier:>5.3f} = {effective:>8.2f} CP  ({stake_count} stakes)")
             else:
                 print(f"   No supporters")
         
         print(f"\n📈 CONVICTION STATISTICS:")
         print("-" * 70)
         
-        # Calculate conviction stats
+        # Calculate conviction stats from stake records
         all_multipliers = []
-        total_agents_participated = 0
+        participating_agents = set()
         
-        for agent_id in self.creditmgr.conviction_ledger:
-            agent_participated = False
-            for proposal_id in self.creditmgr.conviction_ledger[agent_id]:
-                stake = self.creditmgr.conviction_ledger[agent_id][proposal_id]
-                if stake > 0:
-                    if not agent_participated:
-                        total_agents_participated += 1
-                        agent_participated = True
-                    multiplier = self.creditmgr.calculate_conviction_multiplier(
-                        agent_id, proposal_id, conviction_params
-                    )
-                    all_multipliers.append(multiplier)
+        # Get all active stakes for this issue
+        active_stakes = [stake for stake in self.state.stake_ledger 
+                        if stake.status == "active" and stake.issue_id == issue_id]
+        
+        for stake in active_stakes:
+            participating_agents.add(stake.agent_id)
+            
+            # Calculate time held based on stake type
+            if stake.mandatory:
+                time_held = current_tick - first_stake_tick
+            else:
+                time_held = current_tick - stake.initial_tick
+            
+            # Calculate conviction multiplier for this stake
+            growth_multiplier = self.creditmgr.calculate_growth_curve(time_held, conviction_params)
+            all_multipliers.append(growth_multiplier)
         
         if all_multipliers:
             avg_multiplier = sum(all_multipliers) / len(all_multipliers)
             max_multiplier = max(all_multipliers)
             min_multiplier = min(all_multipliers)
             
-            print(f"Agents Participated: {total_agents_participated}")
+            print(f"Agents Participated: {len(participating_agents)}")
             print(f"Average Conviction Multiplier: {avg_multiplier:.3f}")
             print(f"Highest Conviction Multiplier: {max_multiplier:.3f}")
             print(f"Lowest Conviction Multiplier: {min_multiplier:.3f}")

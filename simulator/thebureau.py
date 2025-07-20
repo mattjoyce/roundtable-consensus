@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Optional
 
 from creditmanager import CreditManager
+from text_delta import sentence_sequence_delta
 from models import (ACTION_QUEUE, AgentPool, GlobalConfig, Issue, Proposal,
                     RoundtableState, RunConfig, UnifiedConfig)
 from roundtable import Consensus
@@ -469,7 +470,6 @@ class TheBureau:
     def receive_revision(self, agent_id: str, payload: dict):
         """Process a revision action from an agent - creates versioned proposals."""
         new_content = payload.get("new_content")
-        delta = payload.get("delta")
         tick = payload.get("tick", 0)
         issue_id = payload.get("issue_id")
 
@@ -488,10 +488,9 @@ class TheBureau:
                 agent_id=agent_id,
                 payload={
                     "proposal_id": proposal_id,
-                    "delta": delta,
                     "issue_id": issue_id,
                 },
-                message=f"Received revision from {agent_id}: #{proposal_id} (Δ={delta})",
+                message=f"Received revision from {agent_id}: #{proposal_id}",
             )
         )
 
@@ -514,8 +513,8 @@ class TheBureau:
             )
             return
 
-        # Validation 3: Check revision delta and new content are present
-        if not new_content or delta is None or delta < 0.1 or delta > 1.0:
+        # Validation 3: Check new content is present
+        if not new_content:
             log_event(
                 LogEntry(
                     tick=tick,
@@ -528,37 +527,6 @@ class TheBureau:
                         "reason": "invalid_revision_data",
                     },
                     message=f"Rejected revision from {agent_id}: Invalid revision data",
-                    level=LogLevel.WARNING,
-                )
-            )
-            return
-
-        # Calculate CP cost: cost = proposal_self_stake * delta
-        cost = int(self.config.proposal_self_stake * delta)
-
-        # Attempt to deduct CP (with automatic unstaking if needed)
-        deduct_success = self.creditmgr.attempt_deduct(
-            agent_id=agent_id,
-            amount=cost,
-            reason=f"Revision cost (Δ={delta})",
-            tick=tick,
-            issue_id=issue_id,
-        )
-
-        if not deduct_success:
-            log_event(
-                LogEntry(
-                    tick=tick,
-                    phase=(
-                        self.state.current_phase if self.current_consensus else None
-                    ),
-                    event_type=EventType.REVISION_REJECTED,
-                    agent_id=agent_id,
-                    payload={
-                        "reason": "insufficient_cp",
-                        "cost": cost,
-                    },
-                    message=f"Rejected revision from {agent_id}: Insufficient CP for cost {cost}",
                     level=LogLevel.WARNING,
                 )
             )
@@ -611,6 +579,61 @@ class TheBureau:
             )
             return
 
+        # Calculate official delta using text comparison
+        original_content = old_proposal.content
+        official_delta = sentence_sequence_delta(original_content, new_content)
+        
+        # Validate delta is in acceptable range
+        if official_delta < 0.1 or official_delta > 1.0:
+            log_event(
+                LogEntry(
+                    tick=tick,
+                    phase=(
+                        self.state.current_phase if self.current_consensus else None
+                    ),
+                    event_type=EventType.REVISION_REJECTED,
+                    agent_id=agent_id,
+                    payload={
+                        "reason": "invalid_calculated_delta",
+                        "calculated_delta": official_delta,
+                    },
+                    message=f"Rejected revision from {agent_id}: Calculated delta {official_delta:.3f} outside valid range [0.1, 1.0]",
+                    level=LogLevel.WARNING,
+                )
+            )
+            return
+
+        # Calculate CP cost: cost = proposal_self_stake * official_delta
+        cost = int(self.config.proposal_self_stake * official_delta)
+
+        # Attempt to deduct CP (with automatic unstaking if needed)
+        deduct_success = self.creditmgr.attempt_deduct(
+            agent_id=agent_id,
+            amount=cost,
+            reason=f"Revision cost (Δ={official_delta:.3f})",
+            tick=tick,
+            issue_id=issue_id,
+        )
+
+        if not deduct_success:
+            log_event(
+                LogEntry(
+                    tick=tick,
+                    phase=(
+                        self.state.current_phase if self.current_consensus else None
+                    ),
+                    event_type=EventType.REVISION_REJECTED,
+                    agent_id=agent_id,
+                    payload={
+                        "reason": "insufficient_cp",
+                        "cost": cost,
+                    },
+                    message=f"Rejected revision from {agent_id}: Insufficient CP for cost {cost}",
+                    level=LogLevel.WARNING,
+                )
+            )
+            return
+
         # Get next proposal ID for the revision
         new_proposal_id = self.get_next_proposal_id()
         new_revision_number = old_proposal.revision_number + 1
@@ -628,7 +651,7 @@ class TheBureau:
             tick=tick,
             metadata={
                 "RevisionNumber": str(new_revision_number),
-                "LastRevisionDelta": str(delta),
+                "LastRevisionDelta": str(official_delta),
                 "origin": "revision",
             },
             active=True,
@@ -682,12 +705,12 @@ class TheBureau:
             "type": "Revision",
             "agent_id": agent_id,
             "amount": -cost,
-            "reason": f"Proposal revision (Δ={delta})",
+            "reason": f"Proposal revision (Δ={official_delta:.3f})",
             "tick": tick,
             "issue_id": issue_id,
             "parent_id": proposal_id,
             "new_proposal_id": new_proposal_id,
-            "delta": delta,
+            "delta": official_delta,
             "revision_number": new_revision_number,
             "cp_cost": cost,
         }
@@ -705,12 +728,12 @@ class TheBureau:
                 payload={
                     "parent_id": proposal_id,
                     "new_proposal_id": new_proposal_id,
-                    "delta": delta,
+                    "delta": official_delta,
                     "cost": cost,
                     "revision_number": new_revision_number,
                     "issue_id": issue_id,
                 },
-                message=f"Revision accepted from {agent_id}: #{proposal_id} → #{new_proposal_id} (Δ={delta}, cost={cost}CP, rev{new_revision_number})",
+                message=f"Revision accepted from {agent_id}: #{proposal_id} → #{new_proposal_id} (Δ={official_delta:.3f}, cost={cost}CP, rev{new_revision_number})",
             )
         )
 

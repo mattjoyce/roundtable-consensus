@@ -9,6 +9,8 @@ from thebureau import TheBureau
 from simlog import setup_logging, generate_sim_id
 from config import get_config_with_args
 from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
+from llm import one_shot
+from prompts import load_prompt
 
 def parse_arguments():
     """Parse command line arguments."""
@@ -72,6 +74,24 @@ def parse_arguments():
     )
     
     return parser.parse_args()
+
+
+def generate_issue_content(seed: int) -> str:
+    """
+    Generate a realistic IT problem statement using LLM.
+    
+    Args:
+        seed: Random seed for deterministic generation
+    
+    Returns:
+        Generated problem statement
+    """
+    try:
+        prompt = load_prompt("issue")
+        return one_shot("", "", prompt, seed=seed)
+    except Exception as e:
+        logger.warning(f"LLM issue generation failed: {e}, falling back to default")
+        return "A critical system issue requires team consensus to resolve."
 
 
 def main():
@@ -200,7 +220,8 @@ def main():
                     config['consensus']['stake_phase_ticks']['min'],
                     config['consensus']['stake_phase_ticks']['max']
                 ),
-                finalize_phase_ticks=config['consensus']['finalize_phase_ticks']
+                finalize_phase_ticks=config['consensus']['finalize_phase_ticks'],
+                llm_config=config.get('llm', {})
             )
             
             primer = Primer(gc)
@@ -211,9 +232,17 @@ def main():
             )
             
             # Create a sample issue for the simulation
+            # Use LLM-generated problem statement if enabled, otherwise use config
+            if config.get('llm', {}).get('issue', False):
+                problem_statement = generate_issue_content(scenario_seed)
+                if not args.quiet:
+                    logger.info(f"Generated LLM issue: {problem_statement[:50]}...")
+            else:
+                problem_statement = config['issue']['problem_statement']
+            
             issue = Issue(
                 issue_id=f"Issue_{scenario_seed}",
-                problem_statement=config['issue']['problem_statement'],
+                problem_statement=problem_statement,
                 background=config['issue']['background'],
                 metadata=config['issue']['metadata']
             )

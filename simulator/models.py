@@ -119,6 +119,9 @@ class GlobalConfig(BaseModel):
     revise_phase_ticks: int = Field(default=3, ge=1)
     stake_phase_ticks: int = Field(default=5, ge=1)
     finalize_phase_ticks: int = Field(default=3, ge=1)
+    
+    # LLM configuration
+    llm_config: Dict[str, bool] = Field(default_factory=dict)
 
 class RunConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -152,6 +155,9 @@ class UnifiedConfig(BaseModel):
     stake_phase_ticks: int = Field(default=5, ge=1)
     finalize_phase_ticks: int = Field(default=3, ge=1)
     
+    # LLM configuration
+    llm_config: Dict[str, bool] = Field(default_factory=dict)
+    
     # From RunConfig - Simulation-specific settings
     seed: int
     issue_id: str
@@ -181,6 +187,7 @@ class UnifiedConfig(BaseModel):
             revise_phase_ticks=global_config.revise_phase_ticks,
             stake_phase_ticks=global_config.stake_phase_ticks,
             finalize_phase_ticks=global_config.finalize_phase_ticks,
+            llm_config=global_config.llm_config,
             # RunConfig fields
             seed=run_config.seed,
             issue_id=run_config.issue_id,

@@ -3,7 +3,7 @@ simulation:
   max_scenarios: 1
   pool_seed: 1113
   run_seed: 1719
-  num_agents: 8
+  num_agents: 3
 
 agent_pool:
   size_multiplier: 10
@@ -37,6 +37,13 @@ consensus:
   conviction_params:
     MaxMultiplier: 2.0
     TargetFraction: 0.98
+
+llm:
+  issue: true
+  proposal: true
+  feedback: true
+  revisions: false
+  decisions: false
 
 issue:
   problem_statement: "Custom test problem statement."

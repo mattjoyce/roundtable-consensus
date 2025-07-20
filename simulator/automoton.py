@@ -164,9 +164,18 @@ def handle_propose(agent: AgentActor, payload: dict):
         # Proposal size influenced by traits (30-70 words)
         min_words = 30
         max_words = 70
-        proposal_word_count = int(min_words + (trait_factor * (max_words - min_words)))
         
-        content = generate_lorem_content(rng, proposal_word_count)
+        # Generate proposal content - use LLM if enabled in payload, otherwise lorem ipsum
+        use_llm = payload.get('use_llm_proposal', False)
+        
+        if use_llm:
+            # TODO: Get actual problem statement from current issue
+            problem_statement = "A technology issue requires collaborative solution"
+            content = generate_proposal_content(agent, problem_statement, traits)
+        else:
+            # Original lorem ipsum generation
+            proposal_word_count = int(min_words + (trait_factor * (max_words - min_words)))
+            content = generate_lorem_content(rng, proposal_word_count)
         
         proposal = Proposal(
             proposal_id=0,  # Placeholder - will be assigned by bureau
@@ -184,6 +193,7 @@ def handle_propose(agent: AgentActor, payload: dict):
             payload=proposal.model_dump()
         ))
         memory["has_acted"] = True
+        memory["original_content"] = content  # Store for delta calculation in revisions
         logger.info(f"{agent.agent_id} submitted proposal. (tick {tick}) [Content: {len(content.split())} words, {len(content)} chars] (trait_factor={trait_factor:.2f})")
 
     elif decision_made == "signal":
@@ -282,13 +292,23 @@ def handle_feedback(agent: AgentActor, payload: dict):
     targets = rng.sample(possible_targets, min(num_feedbacks, len(possible_targets))) if possible_targets else []
     
     # Submit feedback actions
+    use_llm = payload.get('use_llm_feedback', False)
+    all_proposal_contents = payload.get("all_proposal_contents", {})  # Dict mapping proposal_id -> content
+    
     for pid in targets:
+        # Generate feedback content
+        if use_llm and pid in all_proposal_contents:
+            comment = generate_feedback_content(agent, all_proposal_contents[pid], traits)
+        else:
+            # Fall back to simple template
+            comment = f"Agent {own_id} thinks {pid} {'needs improvement' if persuasiveness > 0.6 else 'lacks clarity'}."
+        
         ACTION_QUEUE.submit(Action(
             type="feedback",
             agent_id=own_id,
             payload={
                 "target_proposal_id": pid,
-                "comment": f"Agent {own_id} thinks {pid} {'needs improvement' if persuasiveness > 0.6 else 'lacks clarity'}.",
+                "comment": comment,
                 "tick": tick,
                 "issue_id": issue_id
             }
@@ -302,9 +322,50 @@ def handle_feedback(agent: AgentActor, payload: dict):
         logger.info(f"[FEEDBACK] {agent.agent_id} attempted {len(targets)} over-quota feedbacks | Still at: {feedback_given}/{max_feedback}")
     return {"ack": True}
 
+def generate_proposal_content(agent: AgentActor, problem_statement: str, traits: dict) -> str:
+    """Generate proposal content using LLM based on agent traits and problem statement."""
+    try:
+        from llm import one_shot
+        from prompts import load_agent_system_prompt, load_prompt
+        
+        system_prompt = load_agent_system_prompt(traits)
+        context = problem_statement
+        user_prompt = load_prompt("proposal")
+        
+        # Use agent's RNG seed for deterministic generation
+        seed = agent.seed if hasattr(agent, 'seed') else hash(agent.agent_id) % 2**31
+        
+        return one_shot(system_prompt, context, user_prompt, seed=seed)
+    except Exception as e:
+        # Fall back to lorem ipsum if LLM fails
+        from utils import generate_lorem_content
+        return generate_lorem_content(agent.rng, 50)
+
+def generate_feedback_content(agent: AgentActor, proposal_content: str, traits: dict) -> str:
+    """Generate feedback content using LLM based on agent traits and proposal being reviewed."""
+    try:
+        from llm import one_shot
+        from prompts import load_agent_system_prompt, load_prompt
+        
+        system_prompt = load_agent_system_prompt(traits)
+        context = ""  # Leave context blank as requested
+        user_prompt = f"{load_prompt('feedback')}\n\nProposal to review:\n{proposal_content}"
+        
+        # Use agent's RNG seed + proposal hash for deterministic but varied generation
+        base_seed = agent.seed if hasattr(agent, 'seed') else hash(agent.agent_id) % 2**31
+        proposal_hash = hash(proposal_content) % 1000
+        seed = base_seed + proposal_hash
+        
+        return one_shot(system_prompt, context, user_prompt, seed=seed)
+    except Exception as e:
+        # Fall back to simple template if LLM fails
+        persuasiveness = traits.get('persuasiveness', 0.5)
+        return f"Agent {agent.agent_id} thinks this proposal {'needs improvement' if persuasiveness > 0.6 else 'lacks clarity'}."
+
 def handle_revise(agent: AgentActor, payload: dict):
     """Handle REVISE phase signals for agent to revise their own proposals based on feedback."""
     from models import Action
+    from text_delta import sentence_sequence_delta
     
     issue_id = payload.get("issue_id", "unknown")
     tick = payload.get("tick", 0)
@@ -348,18 +409,16 @@ def handle_revise(agent: AgentActor, payload: dict):
         
         if should_revise_anyway:
             # Make a preemptive revision (simulating self-improvement)
-            delta_factor = (adaptability * 0.6 + risk_tolerance * 0.4)
-            delta = max(0.1, min(1.0, 0.1 + delta_factor * 0.6))  # Smaller deltas for preemptive revisions
+            # Get original content from memory
+            propose_memory = get_phase_memory(agent, "propose")
+            original_content = propose_memory.get("original_content", "")
             
-            # Strategic CP check: can agent afford this revision?
-            revision_cost = int(proposal_self_stake * delta)
-            if revision_cost > available_for_revision:
-                logger.info(f"[REVISE] {agent.agent_id} strategic holdback: preemptive revision costs {revision_cost} CP, only {available_for_revision} available (reserved {strategic_reserve} CP for staking)")
+            if not original_content:
+                logger.warning(f"[REVISE] {agent.agent_id} cannot revise - no original content found in memory")
                 signal_ready_action(agent.agent_id, issue_id)
                 return {"ack": True}
             
-            # Generate bigger revised content using lorem ipsum
-            
+            # Generate revised content using lorem ipsum (LLM module will replace this later)
             # Use traits to determine revision size - more thorough agents write longer revisions
             thoroughness, verbosity = calculate_content_traits(profile)
             trait_factor = (thoroughness + verbosity) / 3.0  # Combine traits, normalize
@@ -370,7 +429,17 @@ def handle_revise(agent: AgentActor, payload: dict):
             revision_word_count = int(min_words + (trait_factor * (max_words - min_words)))
             
             lorem_content = generate_lorem_content(rng, revision_word_count)
-            new_content = f"REVISED (Δ={delta:.2f}): {lorem_content}"
+            new_content = f"REVISED: {lorem_content}"
+            
+            # Calculate preview delta for affordability check
+            preview_delta = sentence_sequence_delta(original_content, new_content)
+            
+            # Strategic CP check: can agent afford this revision?
+            estimated_cost = int(proposal_self_stake * preview_delta)
+            if estimated_cost > available_for_revision:
+                logger.info(f"[REVISE] {agent.agent_id} strategic holdback: preemptive revision estimated cost {estimated_cost} CP (Δ={preview_delta:.3f}), only {available_for_revision} available (reserved {strategic_reserve} CP for staking)")
+                signal_ready_action(agent.agent_id, issue_id)
+                return {"ack": True}
             
             ACTION_QUEUE.submit(Action(
                 type="revise",
@@ -378,16 +447,15 @@ def handle_revise(agent: AgentActor, payload: dict):
                 payload={
                     "proposal_id": f"P{agent.agent_id}",
                     "new_content": new_content,
-                    "delta": delta,
                     "tick": tick,
                     "issue_id": issue_id
                 }
             ))
             
             memory["has_revised"] = True
-            memory["revision_delta"] = delta
+            memory["preview_delta"] = preview_delta  # Store preview for debugging
             
-            logger.info(f"[REVISE] {agent.agent_id} no feedback received, making preemptive revision (Δ={delta:.2f}) | adaptability={adaptability:.2f}, score={score:.2f} vs roll={roll:.2f} [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
+            logger.info(f"[REVISE] {agent.agent_id} no feedback received, making preemptive revision (estimated Δ={preview_delta:.3f}, cost={estimated_cost}CP) | adaptability={adaptability:.2f}, score={score:.2f} vs roll={roll:.2f} [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
             return {"ack": True}
         
         # Fall back to participation-based ready signal (not about rule compliance)
@@ -444,20 +512,16 @@ def handle_revise(agent: AgentActor, payload: dict):
         logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → NO REVISION | Weights: adapt=0.4, self=0.25, risk=0.2, pers=0.15")
         return {"ack": True}
     
-    # Decide revision size (delta) based on adaptability and risk tolerance
-    # Higher adaptability + risk tolerance = larger revisions
-    delta_factor = (adaptability * 0.6 + risk_tolerance * 0.4)
-    delta = max(0.1, min(1.0, 0.2 + delta_factor * 0.8))  # Range [0.1, 1.0]
+    # Get original content from memory for delta calculation
+    propose_memory = get_phase_memory(agent, "propose")
+    original_content = propose_memory.get("original_content", "")
     
-    # Strategic CP check: can agent afford this revision?
-    revision_cost = int(proposal_self_stake * delta)
-    if revision_cost > available_for_revision:
-        logger.info(f"[REVISE] {agent.agent_id} strategic holdback: feedback revision costs {revision_cost} CP, only {available_for_revision} available (reserved {strategic_reserve} CP for staking)")
+    if not original_content:
+        logger.warning(f"[REVISE] {agent.agent_id} cannot revise - no original content found in memory")
         signal_ready_action(agent.agent_id, issue_id)
         return {"ack": True}
     
-    # Generate bigger revised content using lorem ipsum
-    
+    # Generate revised content using lorem ipsum (LLM module will replace this later)
     # Use traits to determine revision size for feedback-based revisions
     thoroughness, verbosity = calculate_content_traits(profile)
     adaptability_boost = traits["adaptability"] * 0.5  # Adaptable agents may write more when responding to feedback
@@ -470,7 +534,17 @@ def handle_revise(agent: AgentActor, payload: dict):
     revision_word_count = int(min_words + (trait_factor * (max_words - min_words)))
     
     lorem_content = generate_lorem_content(rng, revision_word_count)
-    new_content = f"FEEDBACK-REVISED (Δ={delta:.2f}): {lorem_content}"
+    new_content = f"FEEDBACK-REVISED: {lorem_content}"
+    
+    # Calculate preview delta for affordability check
+    preview_delta = sentence_sequence_delta(original_content, new_content)
+    
+    # Strategic CP check: can agent afford this revision?
+    estimated_cost = int(proposal_self_stake * preview_delta)
+    if estimated_cost > available_for_revision:
+        logger.info(f"[REVISE] {agent.agent_id} strategic holdback: feedback revision estimated cost {estimated_cost} CP (Δ={preview_delta:.3f}), only {available_for_revision} available (reserved {strategic_reserve} CP for staking)")
+        signal_ready_action(agent.agent_id, issue_id)
+        return {"ack": True}
     
     # Submit revision action
     ACTION_QUEUE.submit(Action(
@@ -478,7 +552,6 @@ def handle_revise(agent: AgentActor, payload: dict):
         agent_id=agent.agent_id,
         payload={
             "new_content": new_content,
-            "delta": delta,
             "tick": tick,
             "issue_id": issue_id
         }
@@ -486,9 +559,9 @@ def handle_revise(agent: AgentActor, payload: dict):
     
     # Update memory
     memory["has_revised"] = True
-    memory["revision_delta"] = delta
+    memory["preview_delta"] = preview_delta  # Store preview for debugging
     
-    logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → REVISING (Δ={delta:.2f}) | Weights: adapt=0.4, self=0.25, risk=0.2, pers=0.15 [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
+    logger.info(f"[REVISE] {agent.agent_id} scored {score:.2f} vs roll {roll:.2f} → REVISING (estimated Δ={preview_delta:.3f}, cost={estimated_cost}CP) | Weights: adapt=0.4, self=0.25, risk=0.2, pers=0.15 [Content: {len(lorem_content.split())} words, {len(new_content)} chars] (trait_factor={trait_factor:.2f})")
     
     return {"ack": True}
 
@@ -752,28 +825,30 @@ def handle_stake(agent: AgentActor, payload: dict):
     # Only constraint: don't stake more than available balance
     stake_amount = min(stake_amount, current_balance)
     
-    # Submit stake action
-    ACTION_QUEUE.submit(Action(
-        type="stake",
-        agent_id=agent.agent_id,
-        payload={
-            "proposal_id": target_proposal_id,
-            "stake_amount": stake_amount,
-            "round_number": round_number,
-            "tick": tick,
-            "issue_id": issue_id,
-            "choice_reason": proposal_choice_reason
-        }
-    ))
+    if stake_amount >0 :
+        # Submit stake action
+        ACTION_QUEUE.submit(Action(
+            type="stake",
+            agent_id=agent.agent_id,
+            payload={
+                "proposal_id": target_proposal_id,
+                "stake_amount": stake_amount,
+                "round_number": round_number,
+                "tick": tick,
+                "issue_id": issue_id,
+                "choice_reason": proposal_choice_reason
+            }
+        ))
     
+  
+        # Update memory
+        memory[f"round_{round_number}_stakes"] = stakes_this_round + 1
+        memory[f"round_{round_number}_amount"] = stake_amount
+        memory[f"round_{round_number}_target"] = target_proposal_id
+
     # Always signal ready after staking
     signal_ready_action(agent.agent_id, issue_id)
-    
-    # Update memory
-    memory[f"round_{round_number}_stakes"] = stakes_this_round + 1
-    memory[f"round_{round_number}_amount"] = stake_amount
-    memory[f"round_{round_number}_target"] = target_proposal_id
-    
+      
     logger.info(f"[STAKE] {agent.agent_id} → STAKING {stake_amount} CP | Round {round_number} | Balance: {current_balance} CP | Target: {target_proposal_id} ({proposal_choice_reason}) | Stake %: {stake_percentage:.2f}")
     
     return {"ack": True}
