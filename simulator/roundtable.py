@@ -798,7 +798,7 @@ class Consensus:
             payload={
                 "phase_tick": self.state.phase_tick
             },
-            message=f"Tick {self.state.tick} — Phase {self.state.current_phase} (Phase Tick {self.state.phase_tick})"
+            message=f"{self.state.tick}:{self.state.phase_tick} — Phase {self.state.current_phase}"
         ))
 
         # Phase complete: skip execution, advance phase

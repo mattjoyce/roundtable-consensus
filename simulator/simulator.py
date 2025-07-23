@@ -72,6 +72,12 @@ def parse_arguments():
         help="Configuration file path (default: config.yaml)"
     )
     
+    parser.add_argument(
+        "--nollm",
+        action="store_true",
+        help="Disable LLM usage and force RNG-based decisions for faster testing"
+    )
+    
     return parser.parse_args()
 
 
@@ -221,7 +227,7 @@ def main():
                     config['consensus']['stake_phase_ticks']['max']
                 ),
                 finalize_phase_ticks=config['consensus']['finalize_phase_ticks'],
-                llm_config=config.get('llm', {})
+                llm_config={} if args.nollm else config.get('llm', {})
             )
             
             primer = Primer(gc)
@@ -233,7 +239,7 @@ def main():
             
             # Create a sample issue for the simulation
             # Use LLM-generated problem statement if enabled, otherwise use config
-            if config.get('llm', {}).get('issue', False):
+            if config.get('llm', {}).get('issue', False) and not args.nollm:
                 model = config.get('llm', {}).get('model', 'gemma3n:e4b')
                 problem_statement = generate_issue_content(scenario_seed, model)
                 if not args.quiet:

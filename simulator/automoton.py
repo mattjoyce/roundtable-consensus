@@ -233,6 +233,7 @@ def handle_propose(agent: AgentActor, payload: dict):
         )
         memory["has_acted"] = True
         memory["original_content"] = content  # Store for delta calculation in revisions
+        signal_ready_action(agent.agent_id, issue_id)  # Signal ready after submitting proposal
         logger.info(
             f"{agent.agent_id} submitted proposal. (tick {tick}) [Content: {len(content.split())} words, {len(content)} chars] (trait_factor={trait_factor:.2f})"
         )
@@ -328,6 +329,7 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
             memory["original_content"] = (
                 content  # Store for delta calculation in revisions
             )
+            signal_ready_action(agent.agent_id, issue_id)  # Signal ready after submitting proposal
             logger.info(
                 f"{agent.agent_id} submitted LLM proposal. (tick {tick}) [Content: {len(content.split())} words, {len(content)} chars]"
             )
