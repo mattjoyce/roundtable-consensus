@@ -1,11 +1,8 @@
 """Round Table Consensus phase management and execution system."""
 
-import random
 from typing import List, Dict
 
 from models import (
-    GlobalConfig,
-    RunConfig,
     UnifiedConfig,
     RoundtableState,
     AgentActor,
@@ -13,7 +10,6 @@ from models import (
 )
 from simlog import (
     log_event,
-    logger,
     LogEntry,
     EventType,
     PhaseType,
