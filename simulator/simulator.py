@@ -11,7 +11,7 @@ from models import (
     Issue,
 )
 from primer import Primer, ARCHETYPES
-from thebureau import TheBureau
+from controller import Controller
 from config import get_config_with_args
 from simlog import (
     setup_logging,
@@ -209,7 +209,7 @@ def main():
         # Note: initial_balances could be used for future balance tracking
         # initial_balances = {aid: agent.initial_balance for aid, agent in agents.items()}
 
-        thebureau = TheBureau(agent_pool=agent_pool)
+        controller = Controller(agent_pool=agent_pool)
 
         # Track simulation round timings
         round_durations: List[float] = []
@@ -285,17 +285,17 @@ def main():
                 metadata=config["issue"]["metadata"],
             )
 
-            # Register the issue in TheBureau
-            thebureau.register_issue(issue)
+            # Register the issue in Controller
+            controller.register_issue(issue)
             logger.info(f"Registered issue: {issue.issue_id}")
 
-            thebureau.configure_consensus(
+            controller.configure_consensus(
                 global_config=global_config, run_config=run_config
             )
 
             # Time the consensus round
             round_start = time.time()
-            result = thebureau.run()
+            result = controller.run()
             round_end = time.time()
             round_duration = round_end - round_start
             round_durations.append(round_duration)

@@ -17,7 +17,7 @@ from roundtable import Consensus
 from simlog import EventType, LogEntry, LogLevel, PhaseType, log_event, logger
 
 
-class TheBureau:
+class Controller:
     def __init__(self, agent_pool: AgentPool):
         self.agent_pool = agent_pool
         self.config: Optional[UnifiedConfig] = None
