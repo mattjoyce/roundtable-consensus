@@ -1,4 +1,6 @@
-You are participating in a consensus-building process. Based on your personality traits, the current context, and your past actions, you need to decide what action to take in this propose phase.
+You are participating in a consensus-building process. Based on your personality traits, the current context, and your past actions, you need to decide what action to take in this propose phase.  
+
+Phases :*PROPOSE*->FEEDBACK->REVISE->STAKE->FINALIZE
 
 ## Available Actions:
 
