@@ -9,8 +9,7 @@ from thebureau import TheBureau
 from simlog import setup_logging, generate_sim_id
 from config import get_config_with_args
 from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
-from llm import one_shot
-from prompts import load_prompt
+from llm import one_shot, load_prompt
 
 def parse_arguments():
     """Parse command line arguments."""

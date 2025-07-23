@@ -79,6 +79,10 @@ def enhance_context_for_call(agent, base_context, call_type, **kwargs):
         tick = kwargs.get('tick', 0)
         return f"Tick {tick}\n\n{base_context}" if base_context else f"Tick {tick}"
     
+    elif call_type == "propose_decision":
+        # Propose decisions need rich context about current state and agent's history
+        return build_propose_decision_context(agent, **kwargs)
+    
     elif call_type == "feedback":
         # Feedback needs full context of current proposals and feedback
         state = kwargs.get('state')
@@ -94,3 +98,67 @@ def enhance_context_for_call(agent, base_context, call_type, **kwargs):
     else:
         # Other calls (revision, etc.) - minimal enhancement
         return base_context or ""
+
+def build_propose_decision_context(agent, **kwargs):
+    """
+    Build rich context for propose decision LLM calls.
+    
+    Includes:
+    - Current tick and issue information
+    - Agent's memory of past actions in this phase
+    - Current state of proposals and feedback if available
+    - Agent's trait summary
+    """
+    tick = kwargs.get('tick', 0)
+    issue_id = kwargs.get('issue_id', 'unknown')
+    memory = kwargs.get('memory', {})
+    state = kwargs.get('state')
+    agent_pool = kwargs.get('agent_pool')
+    
+    context_lines = [
+        f"Tick {tick}",
+        f"Issue: {issue_id}",
+        "-----"
+    ]
+    
+    # Add agent's memory of past actions in this phase
+    if memory:
+        has_acted = memory.get('has_acted', False)
+        if has_acted:
+            context_lines.append("You have already acted in this propose phase.")
+        else:
+            context_lines.append("You have not yet acted in this propose phase.")
+        
+        initial_decision = memory.get('initial_decision')
+        if initial_decision:
+            context_lines.append(f"Previous decision approach: {initial_decision}")
+    
+    # Add current state information if available
+    if state and state.current_issue:
+        proposals = state.current_issue.proposals
+        active_proposals = [p for p in proposals if p.active]
+        
+        if active_proposals:
+            context_lines.append(f"\nCurrent proposals ({len(active_proposals)} active):")
+            for proposal in active_proposals[-3:]:  # Show last 3 proposals
+                author_info = f"by {proposal.author}"
+                if agent_pool and proposal.author in agent_pool.agents:
+                    author_agent = agent_pool.agents[proposal.author]
+                    profile = author_agent.metadata.get("protocol_profile", {})
+                    if profile:
+                        # Show key traits of other agents
+                        key_traits = []
+                        for trait in ['initiative', 'sociability', 'persuasiveness']:
+                            if trait in profile:
+                                key_traits.append(f"{trait[:4]}={profile[trait]:.2f}")
+                        if key_traits:
+                            author_info += f" [{', '.join(key_traits)}]"
+                
+                context_lines.append(f"- Proposal {proposal.proposal_id} {author_info}")
+                context_lines.append(f"  \"{proposal.content[:100]}{'...' if len(proposal.content) > 100 else ''}\"")
+        else:
+            context_lines.append("\nNo active proposals yet.")
+    
+    context_lines.append("-----")
+    
+    return "\n".join(context_lines)

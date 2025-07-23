@@ -2,6 +2,8 @@ from models import AgentActor, Action, ACTION_QUEUE, Proposal
 from simlog import log_event, logger, LogEntry, EventType, PhaseType, LogLevel
 import random
 from utils import linear, sigmoid, ACTIVATIONS, generate_lorem_content
+from llm import one_shot_json, ProposeDecision, load_agent_system_prompt, load_prompt, one_shot
+from context_builder import enhance_context_for_call
 
 # Trait default values for consistency
 TRAIT_DEFAULTS = {
@@ -77,7 +79,12 @@ def handle_signal(agent: AgentActor, payload: dict):
     phase_type = payload.get("type")
     
     if phase_type == "Propose":
-        return handle_propose(agent, payload)
+        # Check if LLM mode is enabled for propose decisions
+        use_llm_propose = payload.get('use_llm_proposal', False)
+        if use_llm_propose:
+            return handle_propose_llm(agent, payload)
+        else:
+            return handle_propose(agent, payload)
     elif phase_type == "Feedback":
         return handle_feedback(agent, payload)
     elif phase_type == "Revise":
@@ -165,18 +172,9 @@ def handle_propose(agent: AgentActor, payload: dict):
         min_words = 30
         max_words = 70
         
-        # Generate proposal content - use LLM if enabled in payload, otherwise lorem ipsum
-        use_llm = payload.get('use_llm_proposal', False)
-        
-        if use_llm:
-            # TODO: Get actual problem statement from current issue
-            problem_statement = "A technology issue requires collaborative solution"
-            model = payload.get('model', 'gemma3n:e4b')  # Get model from payload
-            content = generate_proposal_content(agent, problem_statement, traits, model)
-        else:
-            # Original lorem ipsum generation
-            proposal_word_count = int(min_words + (trait_factor * (max_words - min_words)))
-            content = generate_lorem_content(rng, proposal_word_count)
+        # Generate proposal content using lorem ipsum (trait-based mode)
+        proposal_word_count = int(min_words + (trait_factor * (max_words - min_words)))
+        content = generate_lorem_content(rng, proposal_word_count)
         
         proposal = Proposal(
             proposal_id=0,  # Placeholder - will be assigned by bureau
@@ -208,6 +206,87 @@ def handle_propose(agent: AgentActor, payload: dict):
     elif decision_made == "hold":
         logger.debug(f"{agent.agent_id} is holding position. (tick {tick})")
 
+    return {"ack": True}
+
+def handle_propose_llm(agent: AgentActor, payload: dict):
+    """Handle propose phase using LLM decision making instead of trait-based randomization."""
+    profile = agent.metadata.get("protocol_profile", {})
+    tick = payload.get("tick", 0)
+    issue_id = payload.get("issue_id", "unknown")
+    
+    # Get or initialize phase memory
+    memory = get_phase_memory(agent, "propose")
+    
+    # Extract traits for context
+    traits = extract_traits(profile)
+    
+    try:
+        # Build context for LLM decision
+        enhanced_context = enhance_context_for_call(
+            agent, "", "propose_decision",
+            state=payload.get('state'),
+            tick=tick,
+            agent_pool=payload.get('agent_pool'),
+            issue_id=issue_id,
+            memory=memory
+        )
+        
+        system_prompt = load_agent_system_prompt(traits)
+        user_prompt = load_prompt("propose_decision")
+        model = payload.get('model', 'gemma3n:e4b')
+        
+        # Use agent's RNG seed for deterministic generation
+        seed = agent.seed if hasattr(agent, 'seed') else hash(agent.agent_id) % 2**31
+        
+        # Get structured decision from LLM
+        decision = one_shot_json(
+            system=system_prompt,
+            context=enhanced_context,
+            prompt=user_prompt,
+            response_model=ProposeDecision,
+            model=model,
+            seed=seed
+        )
+        
+        logger.debug(f"[LLM_DECISION] {agent.agent_id} LLM decided: {decision.action} | Reasoning: {decision.reasoning[:100]}...")
+        
+        if decision.action == "propose":
+            # Generate proposal content using existing LLM function
+            problem_statement = payload.get("problem_statement", "A technology issue requires collaborative solution")
+            content = generate_proposal_content(agent, problem_statement, traits, model)
+            
+            proposal = Proposal(
+                proposal_id=0,  # Placeholder - will be assigned by bureau
+                content=content,
+                agent_id=agent.agent_id,
+                issue_id=issue_id,
+                tick=tick,
+                metadata={"origin": "llm:decision", "reasoning": decision.reasoning},
+                author=agent.agent_id,
+                author_type="agent"
+            )
+            ACTION_QUEUE.submit(Action(
+                type="submit_proposal",
+                agent_id=agent.agent_id,
+                payload=proposal.model_dump()
+            ))
+            memory["has_acted"] = True
+            memory["original_content"] = content  # Store for delta calculation in revisions
+            logger.info(f"{agent.agent_id} submitted LLM proposal. (tick {tick}) [Content: {len(content.split())} words, {len(content)} chars]")
+            
+        elif decision.action == "signal_ready":
+            signal_ready_action(agent.agent_id, issue_id)
+            memory["has_acted"] = True
+            logger.info(f"{agent.agent_id} LLM signaled ready. (tick {tick})")
+            
+        elif decision.action == "wait":
+            logger.info(f"{agent.agent_id} LLM decided to wait. (tick {tick})")
+            
+    except Exception as e:
+        logger.error(f"{agent.agent_id} LLM propose decision failed: {e}, falling back to trait-based decision")
+        # Fallback to original trait-based method
+        return handle_propose(agent, payload)
+    
     return {"ack": True}
 
 def handle_feedback(agent: AgentActor, payload: dict):
@@ -338,8 +417,6 @@ def handle_feedback(agent: AgentActor, payload: dict):
 def generate_proposal_content(agent: AgentActor, problem_statement: str, traits: dict, model: str = "gemma3n:e4b") -> str:
     """Generate proposal content using LLM based on agent traits and problem statement."""
     try:
-        from llm import one_shot
-        from prompts import load_agent_system_prompt, load_prompt
         
         system_prompt = load_agent_system_prompt(traits)
         context = problem_statement
@@ -351,14 +428,11 @@ def generate_proposal_content(agent: AgentActor, problem_statement: str, traits:
         return one_shot(system_prompt, context, user_prompt, model=model, seed=seed)
     except Exception as e:
         # Fall back to lorem ipsum if LLM fails
-        from utils import generate_lorem_content
         return generate_lorem_content(agent.rng, 50)
 
 def generate_feedback_content(agent: AgentActor, context: str, proposal_content: str, traits: dict, model: str = "gemma3n:e4b") -> str:
     """Generate feedback content using LLM with enhanced context and specific proposal."""
     try:
-        from llm import one_shot
-        from prompts import load_agent_system_prompt, load_prompt
         
         system_prompt = load_agent_system_prompt(traits)
         user_prompt = f"{load_prompt('feedback')}\n\nSpecific proposal to review:\n{proposal_content}"
