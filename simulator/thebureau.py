@@ -3,8 +3,16 @@ from typing import Optional
 
 from creditmanager import CreditManager
 from text_delta import sentence_sequence_delta
-from models import (ACTION_QUEUE, AgentPool, GlobalConfig, Issue, Proposal,
-                    RoundtableState, RunConfig, UnifiedConfig)
+from models import (
+    ACTION_QUEUE,
+    AgentPool,
+    GlobalConfig,
+    Issue,
+    Proposal,
+    RoundtableState,
+    RunConfig,
+    UnifiedConfig,
+)
 from roundtable import Consensus
 from simlog import EventType, LogEntry, LogLevel, PhaseType, log_event, logger
 
@@ -104,7 +112,9 @@ class TheBureau:
 
         while not consensus._is_complete():
             tick = self.state.tick
-            phase = self.state.current_phase if self.state.current_phase else PhaseType.INIT
+            phase = (
+                self.state.current_phase if self.state.current_phase else PhaseType.INIT
+            )
             # Log phase transitions BEFORE processing actions
             if self.state.phase_tick == 1:
                 log_event(
@@ -114,9 +124,7 @@ class TheBureau:
                         event_type=EventType.PHASE_TRANSITION,
                         payload={
                             "phase_tick": self.state.phase_tick,
-                            "issue_id": (
-                                self.state.current_issue.issue_id
-                            ),
+                            "issue_id": (self.state.current_issue.issue_id),
                         },
                         message=f"Transitioned to new phase: {consensus.get_current_phase().phase_number}",
                     )
@@ -148,58 +156,92 @@ class TheBureau:
         """Validate basic requirements common to most actions."""
         tick = self.state.tick if self.state else 0
         phase = self.state.current_phase if self.state else None
-        issue_id = action.payload.get('issue_id') if hasattr(action, 'payload') else None
-        
+        issue_id = (
+            action.payload.get("issue_id") if hasattr(action, "payload") else None
+        )
+
         # Check if there's an active issue
         if not self.state.current_issue:
-            self._log_action_rejection(agent_id, action.type, "no_active_issue", tick, phase)
+            self._log_action_rejection(
+                agent_id, action.type, "no_active_issue", tick, phase
+            )
             return False, "no_active_issue"
-        
+
         # Check if issue_id matches current issue (if provided)
         if issue_id and issue_id != self.state.current_issue.issue_id:
-            self._log_action_rejection(agent_id, action.type, "wrong_issue", tick, phase, {
-                "received_issue_id": issue_id,
-                "expected_issue_id": self.state.current_issue.issue_id
-            })
+            self._log_action_rejection(
+                agent_id,
+                action.type,
+                "wrong_issue",
+                tick,
+                phase,
+                {
+                    "received_issue_id": issue_id,
+                    "expected_issue_id": self.state.current_issue.issue_id,
+                },
+            )
             return False, "wrong_issue"
-        
+
         # Check if agent is assigned to the issue
         if not self.state.current_issue.is_assigned(agent_id):
-            self._log_action_rejection(agent_id, action.type, "not_assigned", tick, phase, {
-                "issue_id": self.state.current_issue.issue_id
-            })
+            self._log_action_rejection(
+                agent_id,
+                action.type,
+                "not_assigned",
+                tick,
+                phase,
+                {"issue_id": self.state.current_issue.issue_id},
+            )
             return False, "not_assigned"
-        
+
         return True, ""
-    
-    def _validate_amount(self, action, agent_id: str, amount_field: str) -> tuple[bool, str]:
+
+    def _validate_amount(
+        self, action, agent_id: str, amount_field: str
+    ) -> tuple[bool, str]:
         """Validate amount is positive and valid."""
         tick = self.state.tick if self.state else 0
         phase = self.state.current_phase if self.state else None
         amount = action.payload.get(amount_field)
-        
+
         if not amount or amount <= 0:
-            self._log_action_rejection(agent_id, action.type, "invalid_amount", tick, phase, {
-                "amount": amount,
-                "field": amount_field
-            })
+            self._log_action_rejection(
+                agent_id,
+                action.type,
+                "invalid_amount",
+                tick,
+                phase,
+                {"amount": amount, "field": amount_field},
+            )
             return False, "invalid_amount"
-        
+
         return True, ""
-    
-    def _validate_proposal_id(self, action, agent_id: str, field_name: str = "proposal_id") -> tuple[bool, str]:
+
+    def _validate_proposal_id(
+        self, action, agent_id: str, field_name: str = "proposal_id"
+    ) -> tuple[bool, str]:
         """Validate proposal_id is provided."""
         tick = self.state.tick if self.state else 0
         phase = self.state.current_phase if self.state else None
         proposal_id = action.payload.get(field_name)
-        
+
         if not proposal_id:
-            self._log_action_rejection(agent_id, action.type, f"missing_{field_name}", tick, phase)
+            self._log_action_rejection(
+                agent_id, action.type, f"missing_{field_name}", tick, phase
+            )
             return False, f"missing_{field_name}"
-        
+
         return True, ""
-    
-    def _log_action_rejection(self, agent_id: str, action_type: str, reason: str, tick: int, phase: str, extra_payload: dict = None):
+
+    def _log_action_rejection(
+        self,
+        agent_id: str,
+        action_type: str,
+        reason: str,
+        tick: int,
+        phase: str,
+        extra_payload: dict = None,
+    ):
         """Log action rejection with consistent format."""
         event_type_map = {
             "submit_proposal": EventType.PROPOSAL_REJECTED,
@@ -209,20 +251,22 @@ class TheBureau:
             "switch_stake": EventType.SWITCH_REJECTED,
             "unstake": EventType.UNSTAKE_REJECTED,
         }
-        
+
         payload = {"reason": reason}
         if extra_payload:
             payload.update(extra_payload)
-        
-        log_event(LogEntry(
-            tick=tick,
-            phase=PhaseType(phase) if phase else None,
-            event_type=event_type_map.get(action_type, EventType.PROPOSAL_REJECTED),
-            agent_id=agent_id,
-            payload=payload,
-            message=f"Rejected {action_type} from {agent_id}: {reason}",
-            level=LogLevel.WARNING,
-        ))
+
+        log_event(
+            LogEntry(
+                tick=tick,
+                phase=PhaseType(phase) if phase else None,
+                event_type=event_type_map.get(action_type, EventType.PROPOSAL_REJECTED),
+                agent_id=agent_id,
+                payload=payload,
+                message=f"Rejected {action_type} from {agent_id}: {reason}",
+                level=LogLevel.WARNING,
+            )
+        )
 
     def _process_pending_actions(self):
         for action in ACTION_QUEUE.drain():
@@ -232,12 +276,14 @@ class TheBureau:
                     action.agent_id, payload={"reason": "Active Ready Signal"}
                 )
                 continue
-            
+
             # Apply basic validation to all other actions
-            is_valid, reason = self._validate_basic_requirements(action, action.agent_id)
+            is_valid, reason = self._validate_basic_requirements(
+                action, action.agent_id
+            )
             if not is_valid:
                 continue
-            
+
             if action.type == "submit_proposal":
                 proposal = Proposal(**action.payload)
                 self.receive_proposal(action.agent_id, proposal)
@@ -411,7 +457,6 @@ class TheBureau:
         phase = self.state.current_phase if self.state else None
         issue_id = payload["issue_id"]
 
-
         # Prevent self-feedback
         if self.state.current_issue.agent_to_proposal_id.get(agent_id) == target_pid:
             logger.warning(
@@ -428,7 +473,6 @@ class TheBureau:
                 f"Rejected feedback from {agent_id}: exceeded max feedback entries"
             )
             return
-
 
         # Check agent has enough CP to stake
         if not self.creditmgr.get_balance(agent_id) >= self.config.feedback_stake:
@@ -578,7 +622,7 @@ class TheBureau:
         # Calculate official delta using text comparison
         original_content = old_proposal.content
         official_delta = sentence_sequence_delta(original_content, new_content)
-        
+
         # Validate delta is in acceptable range
         if official_delta < 0.1 or official_delta > 1.0:
             log_event(
@@ -747,7 +791,9 @@ class TheBureau:
             log_event(
                 LogEntry(
                     tick=tick,
-                    phase=(self.state.current_phase if self.current_consensus else None),
+                    phase=(
+                        self.state.current_phase if self.current_consensus else None
+                    ),
                     event_type=EventType.STAKE_REJECTED,
                     agent_id=agent_id,
                     payload={
@@ -776,7 +822,6 @@ class TheBureau:
                 message=f"Received stake from {agent_id}: {stake_amount} CP → {proposal_id} (Round {round_number})",
             )
         )
-
 
         # Validation 5: Check if agent is self-staking on their latest proposal
         agent_current_proposal = self.state.current_issue.agent_to_proposal_id.get(
@@ -820,6 +865,7 @@ class TheBureau:
         if deduct_success:
             # Create voluntary stake record in the stake ledger
             from models import StakeRecord
+
             stake_record = StakeRecord(
                 agent_id=agent_id,
                 proposal_id=int(proposal_id),
@@ -827,10 +873,10 @@ class TheBureau:
                 initial_tick=tick,
                 status="active",
                 issue_id=issue_id,
-                mandatory=False  # Voluntary stakes are not mandatory
+                mandatory=False,  # Voluntary stakes are not mandatory
             )
             self.state.stake_ledger.append(stake_record)
-            
+
             # Get conviction parameters from current consensus
             conviction_params = {}
             if self.current_consensus:
@@ -1065,7 +1111,6 @@ class TheBureau:
                 message=f"Received unstake from {agent_id}: {cp_amount} CP from #{proposal_id} ({reason})",
             )
         )
-
 
         # Execute the unstake via CreditManager
         unstake_success = self.creditmgr.unstake_from_proposal(

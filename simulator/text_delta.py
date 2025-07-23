@@ -1,7 +1,8 @@
 from difflib import SequenceMatcher
 import nltk
 
-nltk.download('punkt_tab', quiet=True)
+nltk.download("punkt_tab", quiet=True)
+
 
 def sentence_sequence_delta(old_text: str, new_text: str) -> float:
     """
@@ -15,4 +16,3 @@ def sentence_sequence_delta(old_text: str, new_text: str) -> float:
     ratio = matcher.ratio()
     delta = 1.0 - ratio
     return round(delta, 4)
-

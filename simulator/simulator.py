@@ -1,4 +1,5 @@
 """Simulation runner and configuration generator for Round Table Consensus."""
+
 import random
 import argparse
 import time
@@ -12,7 +13,16 @@ from models import (
 from primer import Primer, ARCHETYPES
 from thebureau import TheBureau
 from config import get_config_with_args
-from simlog import setup_logging, generate_sim_id, log_event, logger, LogEntry, EventType, PhaseType, LogLevel
+from simlog import (
+    setup_logging,
+    generate_sim_id,
+    log_event,
+    logger,
+    LogEntry,
+    EventType,
+    PhaseType,
+    LogLevel,
+)
 from llm import one_shot, load_prompt
 
 
@@ -279,7 +289,9 @@ def main():
             thebureau.register_issue(issue)
             logger.info(f"Registered issue: {issue.issue_id}")
 
-            thebureau.configure_consensus(global_config=global_config, run_config=run_config)
+            thebureau.configure_consensus(
+                global_config=global_config, run_config=run_config
+            )
 
             # Time the consensus round
             round_start = time.time()

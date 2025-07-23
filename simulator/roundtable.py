@@ -1,8 +1,16 @@
 """Round Table Consensus phase management and execution system."""
+
 import random
 from typing import List, Dict
 
-from models import GlobalConfig, RunConfig, UnifiedConfig, RoundtableState, AgentActor, Proposal
+from models import (
+    GlobalConfig,
+    RunConfig,
+    UnifiedConfig,
+    RoundtableState,
+    AgentActor,
+    Proposal,
+)
 from simlog import (
     log_event,
     logger,
@@ -16,6 +24,7 @@ from simlog import (
 
 class Phase:
     """Base class for consensus phases with lifecycle management."""
+
     def __init__(self, phase_type: str, phase_number: int, max_phase_ticks: int = 3):
         self.phase_type = phase_type
         self.phase_number = phase_number
@@ -98,6 +107,7 @@ class Phase:
 
 class ProposePhase(Phase):
     """Phase for agents to submit initial proposals."""
+
     def __init__(self, phase_number: int, max_phase_ticks: int = 3):
         super().__init__("PROPOSE", phase_number, max_phase_ticks)
 
@@ -233,6 +243,7 @@ class ProposePhase(Phase):
 
 class FeedbackPhase(Phase):
     """Phase for agents to provide feedback on proposals."""
+
     def __init__(
         self,
         phase_number: int,
@@ -361,6 +372,7 @@ class FeedbackPhase(Phase):
 
 class RevisePhase(Phase):
     """Phase for agents to revise their proposals based on feedback."""
+
     def __init__(
         self,
         phase_number: int,
@@ -425,6 +437,7 @@ class RevisePhase(Phase):
 
 class StakePhase(Phase):
     """Phase for agents to stake credits on proposals with conviction voting."""
+
     def __init__(
         self,
         phase_number: int,
@@ -537,6 +550,7 @@ class StakePhase(Phase):
 
 class FinalizePhase(Phase):
     """Phase to determine winner and finalize consensus results."""
+
     def __init__(self, phase_number: int, max_phase_ticks: int = 3):
         super().__init__("FINALIZE", phase_number, max_phase_ticks)
 
@@ -938,6 +952,7 @@ def generate_phases(config: UnifiedConfig) -> List[Phase]:
 
 class Consensus:
     """Main consensus orchestrator that manages phase execution and state transitions."""
+
     def __init__(self, config: UnifiedConfig, state: RoundtableState, creditmgr):
         self.config = config
         self.state = state
@@ -1058,7 +1073,7 @@ class Consensus:
         """Check if all phases have been completed."""
         return self.current_phase_index >= len(self.phases)
 
-    def is_think_tick_over(self) -> bool:
+    def is_phase_tick_over(self) -> bool:
         """Check if the current phase has exceeded its maximum tick limit."""
         current_tick = self.state.tick
         start_tick = self.state.phase_start_tick

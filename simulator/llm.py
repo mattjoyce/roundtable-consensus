@@ -14,6 +14,7 @@ _prompt_cache: Dict[str, str] = {}
 # Pydantic models for structured LLM responses
 class ProposeDecision(BaseModel):
     """Structured response model for agent propose decisions."""
+
     action: Literal["propose", "signal_ready", "wait"]
     reasoning: str
 
@@ -22,12 +23,12 @@ T = TypeVar("T", bound=BaseModel)
 
 
 def one_shot(
-    system: str, 
-    context: str, 
-    prompt: str, 
-    model: str = "gemma3n:e4b", 
+    system: str,
+    context: str,
+    prompt: str,
+    model: str = "gemma3n:e4b",
     seed: int = None,
-    context_window: int = None
+    context_window: int = None,
 ) -> str:
     """
     Generates structured prose using a local Ollama model.
