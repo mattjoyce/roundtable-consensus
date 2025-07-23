@@ -284,6 +284,7 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
         seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
 
         # Get structured decision from LLM
+        context_window = payload.get('context_window')
         decision = one_shot_json(
             system=system_prompt,
             context=enhanced_context,
@@ -291,6 +292,7 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
             response_model=ProposeDecision,
             model=model,
             seed=seed,
+            context_window=context_window,
         )
 
         logger.debug(
@@ -303,7 +305,7 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
                 "problem_statement",
                 "A technology issue requires collaborative solution",
             )
-            content = generate_proposal_content(agent, problem_statement, traits, model)
+            content = generate_proposal_content(agent, problem_statement, traits, model, context_window)
 
             proposal = Proposal(
                 proposal_id=0,  # Placeholder - will be assigned by bureau
@@ -484,8 +486,9 @@ def handle_feedback(agent: AgentActor, payload: dict):
                 agent_pool=payload.get("agent_pool"),
             )
 
+            context_window = payload.get('context_window')
             comment = generate_feedback_content(
-                agent, enhanced_context, all_proposal_contents[pid], traits, model
+                agent, enhanced_context, all_proposal_contents[pid], traits, model, context_window
             )
         else:
             # Fall back to simple template
@@ -518,7 +521,7 @@ def handle_feedback(agent: AgentActor, payload: dict):
 
 
 def generate_proposal_content(
-    agent: AgentActor, problem_statement: str, traits: dict, model: str = "gemma3n:e4b"
+    agent: AgentActor, problem_statement: str, traits: dict, model: str = "gemma3n:e4b", context_window: int = None
 ) -> str:
     """Generate proposal content using LLM based on agent traits and problem statement."""
     try:
@@ -530,7 +533,7 @@ def generate_proposal_content(
         # Use agent's RNG seed for deterministic generation
         seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
 
-        return one_shot(system_prompt, context, user_prompt, model=model, seed=seed)
+        return one_shot(system_prompt, context, user_prompt, model=model, seed=seed, context_window=context_window)
     except Exception:
         # Fall back to lorem ipsum if LLM fails
         return generate_lorem_content(agent.rng, 50)
@@ -542,6 +545,7 @@ def generate_feedback_content(
     proposal_content: str,
     traits: dict,
     model: str = "gemma3n:e4b",
+    context_window: int = None,
 ) -> str:
     """Generate feedback content using LLM with enhanced context and specific proposal."""
     try:
@@ -556,7 +560,7 @@ def generate_feedback_content(
         proposal_hash = hash(proposal_content) % 1000
         seed = base_seed + proposal_hash
 
-        return one_shot(system_prompt, context, user_prompt, model=model, seed=seed)
+        return one_shot(system_prompt, context, user_prompt, model=model, seed=seed, context_window=context_window)
     except Exception:
         # Fall back to simple template if LLM fails
         persuasiveness = traits.get("persuasiveness", 0.5)

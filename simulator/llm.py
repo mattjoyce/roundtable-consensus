@@ -22,7 +22,12 @@ T = TypeVar("T", bound=BaseModel)
 
 
 def one_shot(
-    system: str, context: str, prompt: str, model: str = "gemma3n:e4b", seed: int = None
+    system: str, 
+    context: str, 
+    prompt: str, 
+    model: str = "gemma3n:e4b", 
+    seed: int = None,
+    context_window: int = None
 ) -> str:
     """
     Generates structured prose using a local Ollama model.
@@ -34,6 +39,7 @@ def one_shot(
         prompt: User prompt/request
         model: Ollama model name to use
         seed: Random seed for deterministic generation (optional)
+        context_window: Context window size for the model (optional)
     """
 
     # print(f"system: {system}")
@@ -46,10 +52,12 @@ def one_shot(
         {"role": "user", "content": prompt},
     ]
 
-    # Build options dict with seed if provided
+    # Build options dict with seed and context window if provided
     options = {}
     if seed is not None:
         options["seed"] = seed
+    if context_window is not None:
+        options["num_ctx"] = context_window
 
     try:
         response = ollama.chat(model=model, messages=messages, options=options)
@@ -67,6 +75,7 @@ def one_shot_json(
     response_model: Type[T],
     model: str = "gemma3n:e4b",
     seed: int = None,
+    context_window: int = None,
 ) -> T:
     """
     Generates structured JSON response using a local Ollama model with Pydantic validation.
@@ -78,6 +87,7 @@ def one_shot_json(
         response_model: Pydantic model class for structured response
         model: Ollama model name to use
         seed: Random seed for deterministic generation (optional)
+        context_window: Context window size for the model (optional)
 
     Returns:
         Validated Pydantic model instance
@@ -91,10 +101,12 @@ def one_shot_json(
         {"role": "user", "content": f"{context}\n\n{prompt}"},
     ]
 
-    # Build options dict with seed if provided
+    # Build options dict with seed and context window if provided
     options = {}
     if seed is not None:
         options["seed"] = seed
+    if context_window is not None:
+        options["num_ctx"] = context_window
 
     try:
         response = ollama.chat(

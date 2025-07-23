@@ -45,6 +45,7 @@ llm:
   revisions: false
   decisions: false
   model : "phi3"
+  context_window: 4096
 
 issue:
   problem_statement: "Custom test problem statement."

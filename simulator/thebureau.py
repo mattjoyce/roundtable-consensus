@@ -429,10 +429,6 @@ class TheBureau:
             )
             return
 
-        # TODO move to global config
-        if len(comment) > 500:
-            logger.warning(f"Rejected feedback from {agent_id}: comment too long")
-            return
 
         # Check agent has enough CP to stake
         if not self.creditmgr.get_balance(agent_id) >= self.config.feedback_stake:
