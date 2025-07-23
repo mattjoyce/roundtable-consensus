@@ -44,7 +44,7 @@ llm:
   feedback: true
   revisions: false
   decisions: false
-  model : "phi3:latest"
+  model : "phi3"
 
 issue:
   problem_statement: "Custom test problem statement."

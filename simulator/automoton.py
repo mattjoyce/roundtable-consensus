@@ -117,7 +117,7 @@ def handle_propose(agent: AgentActor, payload: dict):
             activation="sigmoid"  # More decisive for extreme trait combinations
         )
         
-        logger.info(f"[DECISION] {agent.agent_id} first-time scored {score:.2f} vs roll {roll:.2f} "
+        logger.debug(f"[DECISION] {agent.agent_id} first-time scored {score:.2f} vs roll {roll:.2f} "
                    f"→ {'SUBMIT' if should_submit else 'CONSIDER'} | Weights: init=0.6, comp=0.2, pers=0.2")
         
         if should_submit:
@@ -126,10 +126,10 @@ def handle_propose(agent: AgentActor, payload: dict):
             # Secondary decision: signal ready vs wait (pure compliance)
             if rng.random() < compliance:
                 decision_made = "signal"
-                logger.info(f"[DECISION] {agent.agent_id} compliance check → SIGNAL")
+                logger.debug(f"[DECISION] {agent.agent_id} compliance check → SIGNAL")
             else:
                 decision_made = "wait"
-                logger.info(f"[DECISION] {agent.agent_id} compliance check → WAIT")
+                logger.debug(f"[DECISION] {agent.agent_id} compliance check → WAIT")
         
         memory["initial_decision"] = decision_made
     else:
@@ -141,7 +141,7 @@ def handle_propose(agent: AgentActor, payload: dict):
             activation="linear"  # Keep linear for retry decisions
         )
         
-        logger.info(f"[DECISION] {agent.agent_id} retry scored {score:.2f} vs roll {roll:.2f} "
+        logger.debug(f"[DECISION] {agent.agent_id} retry scored {score:.2f} vs roll {roll:.2f} "
                    f"→ {'RETRY' if should_retry else 'HOLD'} | Weights: comp=0.5, init=0.3, pers=0.2")
         
         if should_retry:
