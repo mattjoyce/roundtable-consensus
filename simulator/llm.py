@@ -19,6 +19,14 @@ class ProposeDecision(BaseModel):
     reasoning: str
 
 
+class FeedbackDecision(BaseModel):
+    """Structured response model for agent feedback decisions."""
+
+    action: Literal["provide_feedback", "wait"]
+    target_proposals: list[int]  # List of proposal IDs to give feedback to (empty if waiting)
+    reasoning: str
+
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -157,22 +165,19 @@ def load_prompt(prompt_name: str) -> str:
     return content
 
 
-def load_agent_system_prompt(traits: Dict[str, float]) -> str:
+def load_agent_system_prompt() -> str:
     """
-    Load the agent system prompt and inject personality traits.
-
-    Args:
-        traits: Dictionary of agent personality traits (0.0-1.0 scale)
+    Load the generic agent system prompt.
+    
+    Traits and context are now provided via JSON context instead of injection.
 
     Returns:
-        System prompt with traits injected
+        Generic system prompt for all agents
 
     Raises:
         FileNotFoundError: If agent_system.md doesn't exist
     """
-    system_template = load_prompt("agent_system")
-    traits_json = json.dumps(traits, indent=2)
-    return system_template.format(traits_json=traits_json)
+    return load_prompt("agent_system")
 
 
 def clear_prompt_cache():

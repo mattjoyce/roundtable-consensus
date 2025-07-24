@@ -1,7 +1,8 @@
 """Agent automation and decision-making for consensus simulation."""
 
-from context_builder import enhance_context_for_call
+from context_builder import enhance_context_for_call, build_feedback_context
 from llm import (
+    FeedbackDecision,
     ProposeDecision,
     load_agent_system_prompt,
     load_prompt,
@@ -27,10 +28,11 @@ TRAIT_DEFAULTS = {
 
 
 def extract_traits(profile: dict) -> dict:
-    """Extract all traits from profile with consistent defaults."""
-    return {
-        trait: profile.get(trait, default) for trait, default in TRAIT_DEFAULTS.items()
-    }
+    """Extract all traits from profile, error if any trait is missing."""
+    missing = [trait for trait in TRAIT_DEFAULTS if trait not in profile]
+    if missing:
+        raise ValueError(f"Missing required traits in profile: {missing}")
+    return {trait: profile[trait] for trait in TRAIT_DEFAULTS}
 
 
 def signal_ready_action(agent_id: str, issue_id: str) -> None:
@@ -50,6 +52,28 @@ def calculate_content_traits(profile: dict) -> tuple[float, float, float]:
 def get_phase_memory(agent, phase_name: str) -> dict:
     """Get or initialize phase-specific memory for an agent."""
     return agent.memory.setdefault(phase_name, {})
+
+
+def add_memory_action(
+    agent, phase_name: str, tick: int, action_description: str, metadata: dict = None
+):
+    """Add descriptive action entry to agent memory."""
+    memory = get_phase_memory(agent, phase_name)
+    action_key = f"tick_{tick}_action"
+    memory[action_key] = action_description
+    if metadata:
+        memory[f"tick_{tick}_metadata"] = metadata
+
+
+def is_agent_ready_for_phase(agent, phase_name: str) -> bool:
+    """Check if agent has already completed actions for this phase."""
+    memory = get_phase_memory(agent, phase_name)
+    # Check if agent has any completed actions (submitted proposals, signaled ready, etc.)
+    return any(
+        key.endswith("_action")
+        and ("submitted" in str(value) or "signaled ready" in str(value))
+        for key, value in memory.items()
+    )
 
 
 def calculate_strategic_cp_reserve(
@@ -98,13 +122,18 @@ def handle_signal(agent: AgentActor, payload: dict):
 
     if phase_type == "Propose":
         # Check if LLM mode is enabled for propose decisions
-        use_llm_propose = payload.get("use_llm_proposal", False)
+        use_llm_propose = payload['config'].llm_config.get("proposal", False)
         if use_llm_propose:
             return handle_propose_llm(agent, payload)
         else:
             return handle_propose(agent, payload)
     elif phase_type == "Feedback":
-        return handle_feedback(agent, payload)
+        # Check if LLM mode is enabled for feedback decisions
+        use_llm_feedback = payload['config'].llm_config.get("feedback", False)
+        if use_llm_feedback:
+            return handle_feedback_llm(agent, payload)
+        else:
+            return handle_feedback(agent, payload)
     elif phase_type == "Revise":
         return handle_revise(agent, payload)
     elif phase_type == "Stake":
@@ -231,7 +260,18 @@ def handle_propose(agent: AgentActor, payload: dict):
                 payload=proposal.model_dump(),
             )
         )
-        memory["has_acted"] = True
+        # Update memory with descriptive action
+        add_memory_action(
+            agent,
+            "propose",
+            tick,
+            f"submitted {len(content.split())}-word proposal about problem solving",
+            {
+                "word_count": len(content.split()),
+                "char_count": len(content),
+                "trait_factor": trait_factor,
+            },
+        )
         memory["original_content"] = content  # Store for delta calculation in revisions
         signal_ready_action(
             agent.agent_id, issue_id
@@ -242,7 +282,9 @@ def handle_propose(agent: AgentActor, payload: dict):
 
     elif decision_made == "signal":
         signal_ready_action(agent.agent_id, issue_id)
-        memory["has_acted"] = True
+        add_memory_action(
+            agent, "propose", tick, "signaled ready without submitting proposal"
+        )
         logger.info(f"{agent.agent_id} signaled ready. (tick {tick})")
 
     elif decision_made == "wait":
@@ -257,8 +299,13 @@ def handle_propose(agent: AgentActor, payload: dict):
 def handle_propose_llm(agent: AgentActor, payload: dict):
     """Handle propose phase using LLM decision making instead of trait-based randomization."""
     profile = agent.metadata.get("protocol_profile", {})
-    tick = payload.get("tick", 0)
-    issue_id = payload.get("issue_id", "unknown")
+    state = payload.get("state")
+    config = payload.get("config")
+    phase = payload.get("phase")
+    
+    tick = state.tick
+    phase_tick = state.phase_tick
+    issue_id = config.issue_id
 
     # Get or initialize phase memory
     memory = get_phase_memory(agent, "propose")
@@ -267,27 +314,38 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
     traits = extract_traits(profile)
 
     try:
-        # Build context for LLM decision
-        enhanced_context = enhance_context_for_call(
-            agent,
-            "",
-            "propose_decision",
-            state=payload.get("state"),
-            tick=tick,
-            agent_pool=payload.get("agent_pool"),
-            issue_id=issue_id,
-            memory=memory,
-        )
+        # Build context for LLM decision - extract serializable fields for context builder
+        context_payload = {
+            "type": payload["type"],
+            "state": payload["state"],
+            "config": payload["config"],
+            "tick": tick,
+            "phase_tick": phase_tick,
+            "issue_id": issue_id,
+            "max_phase_ticks": payload["phase"].max_phase_ticks,
+        }
+        enhanced_context = enhance_context_for_call(agent, context_payload, "propose_decision")
 
-        system_prompt = load_agent_system_prompt(traits)
+        system_prompt = load_agent_system_prompt()
         user_prompt = load_prompt("propose_decision")
-        model = payload.get("model", "gemma3n:e4b")
+        model = config.llm_config.get("model", None)
 
         # Use agent's RNG seed for deterministic generation
         seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
 
+        ## dump context for debugging
+        ## make filename, from agent id, tick, phase
+        from pathlib import Path
+
+        debug_dir = Path("debug")
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"context_{agent.agent_id}_{tick}_{phase_tick}_propose.txt"
+        print(filename)
+        path = debug_dir / filename
+        path.write_text(enhanced_context, encoding="utf-8")
+
         # Get structured decision from LLM
-        context_window = payload.get("context_window")
+        context_window = config.llm_config.get("context_window")
         decision = one_shot_json(
             system=system_prompt,
             context=enhanced_context,
@@ -304,10 +362,7 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
 
         if decision.action == "propose":
             # Generate proposal content using existing LLM function
-            problem_statement = payload.get(
-                "problem_statement",
-                "A technology issue requires collaborative solution",
-            )
+            problem_statement = state.current_issue.problem_statement if state.current_issue else "A technology issue requires collaborative solution"
             content = generate_proposal_content(
                 agent, problem_statement, traits, model, context_window
             )
@@ -329,7 +384,17 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
                     payload=proposal.model_dump(),
                 )
             )
-            memory["has_acted"] = True
+            add_memory_action(
+                agent,
+                "propose",
+                tick,
+                f"submitted {len(content.split())}-word LLM proposal based on reasoning: {decision.reasoning[:50]}...",
+                {
+                    "word_count": len(content.split()),
+                    "char_count": len(content),
+                    "llm_reasoning": decision.reasoning,
+                },
+            )
             memory["original_content"] = (
                 content  # Store for delta calculation in revisions
             )
@@ -342,29 +407,47 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
 
         elif decision.action == "signal_ready":
             signal_ready_action(agent.agent_id, issue_id)
-            memory["has_acted"] = True
+            add_memory_action(
+                agent,
+                "propose",
+                tick,
+                f"LLM decided to signal ready: {decision.reasoning[:50]}...",
+                {"llm_reasoning": decision.reasoning},
+            )
             logger.info(f"{agent.agent_id} LLM signaled ready. (tick {tick})")
 
         elif decision.action == "wait":
+            add_memory_action(
+                agent,
+                "propose",
+                tick,
+                f"LLM decided to wait: {decision.reasoning[:50]}...",
+                {"llm_reasoning": decision.reasoning},
+            )
             logger.info(f"{agent.agent_id} LLM decided to wait. (tick {tick})")
 
     except Exception as exc:
         logger.error(
-            f"{agent.agent_id} LLM propose decision failed: {exc}, "
-            "falling back to trait-based decision"
+            f"{agent.agent_id} LLM propose decision failed: {exc}. "
+            "Aborting propose phase. Please check LLM configuration, model availability, and input context."
         )
-        # Fallback to original trait-based method
-        return handle_propose(agent, payload)
+        raise RuntimeError(
+            f"LLM propose decision failed for agent {agent.agent_id}: {exc}. "
+            "Propose phase aborted. Check LLM setup and logs for details."
+        )
 
     return {"ack": True}
 
 
 def handle_feedback(agent: AgentActor, payload: dict):
     """Handle feedback phase for agents to provide comments on proposals."""
-
-    issue_id = payload["issue_id"]
-    max_feedback = payload.get("max_feedback", 3)
-    tick = payload.get("tick", 0)
+    state = payload.get("state")
+    config = payload.get("config")
+    phase = payload.get("phase")
+    
+    issue_id = config.issue_id
+    max_feedback = phase.max_feedback_per_agent
+    tick = state.tick
 
     rng = agent.rng
     own_id = agent.agent_id
@@ -484,17 +567,19 @@ def handle_feedback(agent: AgentActor, payload: dict):
             model = payload.get("model", "gemma3n:e4b")  # Get model from payload
 
             # Build rich context for feedback
-            enhanced_context = enhance_context_for_call(
-                agent,
-                "",
-                "feedback",
-                state=payload.get("state"),
-                all_proposal_contents=all_proposal_contents,
-                tick=tick,
-                agent_pool=payload.get("agent_pool"),
-            )
+            context_payload = {
+                "type": payload["type"],
+                "state": payload["state"],
+                "config": payload["config"],
+                "tick": tick,
+                "max_feedback": max_feedback,
+                "agent_proposals": all_proposals,
+                "agent_proposal_id": own_proposal_id,
+                "proposal_contents": all_proposal_contents,
+            }
+            enhanced_context = enhance_context_for_call(agent, context_payload, "feedback")
 
-            context_window = payload.get("context_window")
+            context_window = config.llm_config.get("context_window")
             comment = generate_feedback_content(
                 agent,
                 enhanced_context,
@@ -523,13 +608,220 @@ def handle_feedback(agent: AgentActor, payload: dict):
     # Update memory to track feedback count (only if within quota)
     if remaining_quota > 0:
         memory["feedback_given"] = feedback_given + len(targets)
+        # Add memory action for each feedback provided
+        for pid in targets:
+            add_memory_action(
+                agent,
+                "feedback",
+                tick,
+                f"provided feedback to proposal {pid}",
+                {"target_proposal_id": pid, "feedback_count": memory["feedback_given"]}
+            )
+            # Log to verify memory action is called
+            logger.info(f"💭 Added feedback memory for {agent.agent_id} -> P{pid}")
         logger.info(
             f"[FEEDBACK] {agent.agent_id} submitted {len(targets)} feedbacks | Total: {memory['feedback_given']}/{max_feedback}"
         )
     else:
+        # Add memory action for over-quota attempts
+        for pid in targets:
+            add_memory_action(
+                agent,
+                "feedback",
+                tick,
+                f"attempted over-quota feedback to proposal {pid}",
+                {"target_proposal_id": pid, "quota_exceeded": True}
+            )
         logger.info(
             f"[FEEDBACK] {agent.agent_id} attempted {len(targets)} over-quota feedbacks | Still at: {feedback_given}/{max_feedback}"
         )
+    return {"ack": True}
+
+
+def handle_feedback_llm(agent: AgentActor, payload: dict):
+    """Handle feedback phase using LLM decision making instead of trait-based randomization."""
+    state = payload.get("state")
+    config = payload.get("config")
+    phase = payload.get("phase")
+
+    issue_id = config.issue_id
+    max_feedback = phase.max_feedback_per_agent
+    tick = state.tick
+
+    # Get or initialize feedback memory
+    memory = get_phase_memory(agent, "feedback")
+    feedback_given = memory.get("feedback_given", 0)
+
+    # Check if already at quota - this is a hard constraint regardless of LLM decision
+    if feedback_given >= max_feedback:
+        logger.info(
+            f"[FEEDBACK-LLM] {agent.agent_id} already at quota ({feedback_given}/{max_feedback}) - cannot proceed"
+        )
+        return {"ack": True}
+
+    # Extract traits for context
+    profile = agent.metadata.get("protocol_profile", {})
+    traits = extract_traits(profile)
+
+    try:
+        # Build context for LLM decision - use the proper JSON structure
+        context_payload = {
+            "type": payload["type"],
+            "state": payload["state"],
+            "config": payload["config"],
+            "tick": tick,
+            "max_feedback": max_feedback,
+            "agent_proposals": payload.get("agent_proposals", []),
+            "agent_proposal_id": payload.get("agent_proposal_id"),
+            "proposal_contents": payload.get("proposal_contents", {}),
+        }
+        enhanced_context = enhance_context_for_call(agent, context_payload, "feedback_decision")
+
+        system_prompt = load_agent_system_prompt()
+        user_prompt = load_prompt("feedback_decision")
+        model = config.llm_config.get("model", None)
+
+        # Use agent's RNG seed for deterministic generation
+        seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
+
+        # Dump context for debugging
+        from pathlib import Path
+
+        debug_dir = Path("debug")
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        phase_tick = state.phase_tick
+        filename = f"context_{agent.agent_id}_{tick}_{phase_tick}_feedback.txt"
+        print(filename)
+        path = debug_dir / filename
+        path.write_text(enhanced_context, encoding="utf-8")
+
+        # Get structured decision from LLM
+        context_window = config.llm_config.get("context_window")
+        decision = one_shot_json(
+            system=system_prompt,
+            context=enhanced_context,
+            prompt=user_prompt,
+            response_model=FeedbackDecision,
+            model=model,
+            seed=seed,
+            context_window=context_window
+        )
+
+        logger.info(
+            f"[FEEDBACK-LLM] {agent.agent_id} LLM decision: {decision.action}, "
+            f"targets={decision.target_proposals}, reasoning='{decision.reasoning}'"
+        )
+
+        logger.debug(
+            f"[LLM_DECISION] {agent.agent_id} LLM decided: {decision.action} | Reasoning: {decision.reasoning[:100]}..."
+        )
+
+        if decision.action == "provide_feedback":
+            # Filter targets and validate constraints
+            own_proposal_id = payload.get("agent_proposal_id")
+            all_proposals = payload.get("agent_proposals", [])
+
+            # Filter out own proposal and non-existent proposals
+            valid_targets = [
+                pid
+                for pid in decision.target_proposals
+                if pid != own_proposal_id and pid in all_proposals
+            ]
+
+            # Limit to remaining quota
+            remaining_quota = max_feedback - feedback_given
+            final_targets = valid_targets[:remaining_quota]
+
+            if not final_targets:
+                add_memory_action(
+                    agent,
+                    "feedback",
+                    tick,
+                    f"LLM decided to provide feedback but no valid targets: {decision.reasoning[:50]}...",
+                    {"llm_reasoning": decision.reasoning, "attempted_targets": decision.target_proposals},
+                )
+                logger.info(
+                    f"[FEEDBACK-LLM] {agent.agent_id} has no valid targets after filtering"
+                )
+            else:
+                # Generate feedback content for each target using LLM
+                all_proposal_contents = payload.get("proposal_contents", {})
+
+                for pid in final_targets:
+                    if pid in all_proposal_contents:
+                        # Build rich context for feedback content generation
+                        context_payload = {
+                            "type": payload["type"],
+                            "state": payload["state"],
+                            "config": payload["config"],
+                            "tick": tick,
+                            "max_feedback": max_feedback,
+                            "agent_proposals": payload.get("agent_proposals", []),
+                            "agent_proposal_id": payload.get("agent_proposal_id"),
+                            "proposal_contents": payload.get("proposal_contents", {}),
+                        }
+                        feedback_context = enhance_context_for_call(agent, context_payload, "feedback")
+
+                        comment = generate_feedback_content(
+                            agent,
+                            feedback_context,
+                            all_proposal_contents[pid],
+                            traits,
+                            model,
+                            context_window,
+                        )
+
+                        # Submit feedback action
+                        ACTION_QUEUE.submit(
+                            Action(
+                                type="feedback",
+                                agent_id=agent.agent_id,
+                                payload={
+                                    "target_proposal_id": pid,
+                                    "comment": comment,
+                                    "tick": tick,
+                                    "issue_id": issue_id,
+                                },
+                            )
+                        )
+
+                        # Update memory
+                        memory["feedback_given"] = memory.get("feedback_given", 0) + 1
+                        # Add memory action for LLM feedback
+                        add_memory_action(
+                            agent,
+                            "feedback",
+                            tick,
+                            f"LLM provided feedback to proposal {pid}: {comment[:30]}...",
+                            {"target_proposal_id": pid, "llm_generated": True, "feedback_count": memory["feedback_given"], "llm_reasoning": decision.reasoning}
+                        )
+                        logger.info(
+                            f"[FEEDBACK-LLM] {agent.agent_id} submitted feedback to P{pid}: '{comment[:50]}...'"
+                        )
+
+                logger.info(
+                    f"[FEEDBACK-LLM] {agent.agent_id} submitted {len(final_targets)} feedbacks | Total: {memory['feedback_given']}/{max_feedback}"
+                )
+
+        elif decision.action == "wait":
+            add_memory_action(
+                agent,
+                "feedback",
+                tick,
+                f"LLM decided to wait: {decision.reasoning[:50]}...",
+                {"llm_reasoning": decision.reasoning},
+            )
+            logger.info(f"[FEEDBACK-LLM] {agent.agent_id} LLM decided to wait. (tick {tick})")
+
+    except Exception as exc:
+        logger.error(
+            f"[FEEDBACK-LLM] {agent.agent_id} LLM feedback decision failed: {exc}"
+        )
+        # Fall back to no feedback on LLM failure
+        logger.info(
+            f"[FEEDBACK-LLM] {agent.agent_id} falling back to no feedback due to LLM failure"
+        )
+
     return {"ack": True}
 
 
@@ -543,7 +835,7 @@ def generate_proposal_content(
     """Generate proposal content using LLM based on agent traits and problem statement."""
     try:
 
-        system_prompt = load_agent_system_prompt(traits)
+        system_prompt = load_agent_system_prompt()
         context = problem_statement
         user_prompt = load_prompt("proposal")
 
@@ -574,7 +866,7 @@ def generate_feedback_content(
     """Generate feedback content using LLM with enhanced context and specific proposal."""
     try:
 
-        system_prompt = load_agent_system_prompt(traits)
+        system_prompt = load_agent_system_prompt()
         user_prompt = f"{load_prompt('feedback')}\n\nSpecific proposal to review:\n{proposal_content}"
 
         # Use agent's RNG seed + proposal hash for deterministic but varied generation
@@ -699,7 +991,7 @@ def handle_revise(agent: AgentActor, payload: dict):
                     type="revise",
                     agent_id=agent.agent_id,
                     payload={
-                        "proposal_id": f"P{agent.agent_id}",
+                        "proposal_id": payload.get("agent_proposal_id"),
                         "new_content": new_content,
                         "tick": tick,
                         "issue_id": issue_id,
@@ -836,7 +1128,12 @@ def handle_revise(agent: AgentActor, payload: dict):
         Action(
             type="revise",
             agent_id=agent.agent_id,
-            payload={"new_content": new_content, "tick": tick, "issue_id": issue_id},
+            payload={
+                "proposal_id": payload.get("agent_proposal_id"),
+                "new_content": new_content, 
+                "tick": tick, 
+                "issue_id": issue_id
+            },
         )
     )
 
@@ -999,7 +1296,7 @@ def handle_stake(agent: AgentActor, payload: dict):
         )
 
     # Get own proposal ID for use throughout function
-    own_proposal_id = payload.get("current_proposal_id", f"P{agent.agent_id}")
+    own_proposal_id = payload.get("current_proposal_id")
 
     # Decision 1.75: Consider unstaking existing stakes (strategic withdrawal)
     if agent_conviction:  # Agent has existing stakes to potentially unstake

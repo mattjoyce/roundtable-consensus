@@ -1,7 +1,9 @@
 """
-Simple context builder for agent LLM calls.
-Provides minimal, focused context in readable format.
+JSON-based context builder for agent LLM calls.
+Provides comprehensive structured context in JSON format.
 """
+
+import json
 
 
 def build_feedback_context(state, all_proposal_contents, current_tick, agent_pool=None):
@@ -73,38 +75,79 @@ def build_feedback_context(state, all_proposal_contents, current_tick, agent_poo
     return "\n".join(context_lines)
 
 
-def enhance_context_for_call(agent, base_context, call_type, **kwargs):
+def enhance_context_for_call(agent, payload, call_type):
     """
-    Enhance the context parameter for LLM calls.
-    Only adds context where it's actually useful.
+    Build comprehensive JSON context for LLM calls.
+    Returns structured data that LLMs can easily parse.
     """
-
-    if call_type == "proposal":
-        # Proposals don't need much context - just current state
-        tick = kwargs.get("tick", 0)
-        return f"Tick {tick}\n\n{base_context}" if base_context else f"Tick {tick}"
-
-    elif call_type == "propose_decision":
-        # Propose decisions need rich context about current state and agent's history
-        return build_propose_decision_context(agent, **kwargs)
-
-    elif call_type == "feedback":
-        # Feedback needs full context of current proposals and feedback
-        state = kwargs.get("state")
-        all_proposal_contents = kwargs.get("all_proposal_contents", {})
-        tick = kwargs.get("tick", 0)
-
-        if state:
-            agent_pool = kwargs.get("agent_pool")
-            return build_feedback_context(
-                state, all_proposal_contents, tick, agent_pool
-            )
-        else:
-            return base_context or f"Tick {tick}"
-
-    else:
-        # Other calls (revision, etc.) - minimal enhancement
-        return base_context or ""
+    
+    # Extract agent traits from metadata
+    profile = agent.metadata.get("protocol_profile", {})
+    
+    # Build universal context structure
+    context = {
+        "agent": {
+            "id": agent.agent_id,
+            "traits": profile,
+            "memory": getattr(agent, 'memory', {}),
+            "balance": payload.get("current_balance", getattr(agent, 'initial_balance', 0))
+        },
+        "current_state": {
+            "tick": payload.get("tick", 0),
+            "phase_tick": payload.get("phase_tick", 0),
+            "max_phase_ticks": payload.get("max_phase_ticks"),
+            "phase": payload.get("phase", call_type),
+            "issue_id": payload.get("issue_id", "unknown")
+        }
+        # Skip payload entirely to avoid redundancy and serialization issues
+    }
+    
+    # Add state-specific information if available
+    state = payload.get("state")
+    if state and hasattr(state, 'current_issue') and state.current_issue:
+        issue = state.current_issue
+        context["current_state"]["issue"] = {
+            "id": issue.issue_id,
+            "problem_statement": getattr(issue, 'problem_statement', ''),
+            "background": getattr(issue, 'background', ''),
+            "proposals": [
+                {
+                    "id": p.proposal_id,
+                    "content": p.content,
+                    "author": p.author,
+                    "active": getattr(p, 'active', True),
+                    "tick": p.tick
+                }
+                for p in issue.proposals
+                if getattr(p, 'active', True)  # Only include active proposals
+            ],
+            "feedback_log": getattr(issue, 'feedback_log', [])
+        }
+    
+    # Add agent pool information if available - only include agents that are actually participating
+    agent_pool = payload.get("agent_pool")
+    if agent_pool and hasattr(agent_pool, 'agents'):
+        # Only include agents that have submitted proposals or are actively participating
+        participating_agents = []
+        if state and hasattr(state, 'current_issue') and state.current_issue:
+            # Get agents who have submitted proposals
+            proposal_authors = {p.author for p in state.current_issue.proposals if p.author != "system"}
+            for agent_id in proposal_authors:
+                if agent_id != agent.agent_id and agent_id in agent_pool.agents:
+                    other_agent = agent_pool.agents[agent_id]
+                    other_profile = other_agent.metadata.get("protocol_profile", {})
+                    # Only include if they actually have traits
+                    if other_profile:
+                        participating_agents.append({
+                            "id": agent_id,
+                            "traits": other_profile
+                        })
+        
+        # Only add the section if we have useful data
+        if participating_agents:
+            context["current_state"]["other_agents"] = participating_agents
+    
+    return json.dumps(context, indent=2)
 
 
 def build_propose_decision_context(agent, **kwargs):

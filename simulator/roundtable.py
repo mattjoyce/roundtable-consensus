@@ -222,14 +222,11 @@ class ProposePhase(Phase):
         )
         for agent in agents:
             agent.on_signal(
-                {
+                payload={
                     "type": "Propose",
-                    "phase_number": self.phase_number,
-                    "max_phase_ticks": self.max_phase_ticks,
-                    "issue_id": config.issue_id,
-                    "use_llm_proposal": config.llm_config.get("proposal", False),
-                    "model": config.llm_config.get("model", "gemma3n:e4b"),
-                    "context_window": config.llm_config.get("context_window"),
+                    "state": state,
+                    "config": config,
+                    "phase": self,
                 }
             )
 
@@ -308,20 +305,14 @@ class FeedbackPhase(Phase):
                         all_proposal_contents[proposal.proposal_id] = proposal.content
 
             agent.on_signal(
-                {
+                payload={
                     "type": "Feedback",
-                    "cycle_number": self.cycle_number,
-                    "tick": state.tick,
-                    "issue_id": config.issue_id,
-                    "max_feedback": self.max_feedback_per_agent,
-                    "all_proposals": all_proposals,
-                    "current_proposal_id": current_proposal_id,
-                    "use_llm_feedback": config.llm_config.get("feedback", False),
-                    "model": config.llm_config.get("model", "gemma3n:e4b"),
-                    "context_window": config.llm_config.get("context_window"),
-                    "all_proposal_contents": all_proposal_contents,
-                    "state": state,  # Add state for context building
-                    "agent_pool": config.agent_pool,  # Add agent pool for trait display
+                    "state": state,
+                    "config": config,
+                    "phase": self,
+                    "agent_proposals": all_proposals,
+                    "agent_proposal_id": current_proposal_id,
+                    "proposal_contents": all_proposal_contents,
                 }
             )
 
@@ -414,16 +405,14 @@ class RevisePhase(Phase):
             all_proposals = list(state.agent_proposal_ids.values())
 
             agent.on_signal(
-                {
+                payload={
                     "type": "Revise",
-                    "cycle_number": self.cycle_number,
-                    "tick": state.tick,
-                    "issue_id": config.issue_id,
-                    "proposal_self_stake": self.proposal_self_stake,
+                    "state": state,
+                    "config": config,
+                    "phase": self,
                     "feedback_received": feedback_received,
-                    "current_proposal_id": current_proposal_id,
-                    "all_proposals": all_proposals,
-                    "current_balance": state.agent_balances.get(agent.agent_id, 0),
+                    "agent_proposal_id": current_proposal_id,
+                    "agent_proposals": all_proposals,
                 }
             )
 
@@ -528,15 +517,14 @@ class StakePhase(Phase):
             #             current_conviction[agent.agent_id] = agent_convictions
 
             agent.on_signal(
-                {
+                payload={
                     "type": "Stake",
-                    "round_number": self.round_number,
-                    "conviction_params": self.conviction_params,
-                    "tick": state.tick,
-                    "issue_id": config.issue_id,
-                    "current_balance": current_balance,
-                    "current_proposal_id": current_proposal_id,
-                    "all_proposals": all_proposals,
+                    "state": state,
+                    "config": config,
+                    "phase": self,
+                    "agent_proposal_id": current_proposal_id,
+                    "agent_proposals": all_proposals,
+                    "agent_balance": current_balance,
                 }
             )
 
@@ -568,11 +556,11 @@ class FinalizePhase(Phase):
         # Signal agents about finalization phase
         for agent in agents:
             agent.on_signal(
-                {
+                payload={
                     "type": "Finalize",
-                    "phase_number": self.phase_number,
-                    "tick": state.tick,
-                    "issue_id": config.issue_id,
+                    "state": state,
+                    "config": config,
+                    "phase": self,
                 }
             )
 

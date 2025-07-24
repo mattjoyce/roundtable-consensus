@@ -1,10 +1,12 @@
 # models.py
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Optional, Literal, Any
-from collections import defaultdict
 import random
 import uuid
-from simlog import log_event, logger, LogEntry, EventType, LogLevel
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+# Delayed import to avoid circular dependency
+from simlog import log_event, logger
 
 
 class StakeRecord(BaseModel):
@@ -52,10 +54,10 @@ class AgentActor(BaseModel):
     memory: Dict[str, Any] = {}
     latest_proposal_id: Optional[int] = None  # Track agent's current proposal
 
-    def on_signal(self, payload: Dict[str, str | int]) -> Optional[dict]:
+    def on_signal(self, payload: Dict[str, Any]) -> Optional[dict]:
         """Handle signals sent to the agent."""
+        # Import here to avoid circular dependency
         from automoton import handle_signal
-
         return handle_signal(self, payload)
 
     def clone(self) -> "AgentActor":
@@ -328,13 +330,18 @@ class Issue(BaseModel):
     metadata: Optional[Dict] = {}
 
     def is_assigned(self, agent_id: str) -> bool:
-        """Check if agent is assigned to this issue."""
+        """Check if agent is assigned to this issue (authorized to participate)."""
+        # Check if agent is in the authorized agent list for this issue
         return agent_id in self.agent_ids
 
     def add_proposal(self, proposal: Proposal):
         """Add a proposal to this issue."""
         self.proposals.append(proposal)
         self.agent_to_proposal_id[proposal.agent_id] = proposal.proposal_id
+        
+        # Log proposal addition to track array changes
+        from simlog import logger
+        logger.info(f"📝 Issue {self.issue_id}: Added proposal #{proposal.proposal_id} from {proposal.author}. Total proposals: {len(self.proposals)}")
 
     def get_proposal(self, proposal_id: str) -> Optional[Dict]:
         """Get a proposal by ID."""
