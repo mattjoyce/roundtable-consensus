@@ -122,8 +122,8 @@ def load_issue_from_file(file_path: str) -> str:
         Issue content from file
     """
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
+        with open(file_path, "r", encoding="utf-8") as file_handle:
+            content = file_handle.read().strip()
         if not content:
             raise ValueError("Issue file is empty")
         logger.info(f"Loaded issue content from {file_path}")
@@ -359,8 +359,10 @@ def main():
                 generate_proposal_debug_files(sim_id, issue.issue_id)
                 if not args.quiet:
                     logger.info(f"Generated proposal debug files for scenario {i + 1}")
-            except Exception as e:
-                logger.warning(f"Failed to generate proposal debug files for scenario {i + 1}: {e}")
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to generate proposal debug files for scenario {i + 1}: {exc}"
+                )
 
             log_event(
                 LogEntry(

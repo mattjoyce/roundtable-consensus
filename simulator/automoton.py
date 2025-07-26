@@ -1,5 +1,7 @@
 """Agent automation and decision-making for consensus simulation."""
 
+from pathlib import Path
+
 from context_builder import enhance_context_for_call
 from llm import (
     FeedbackDecision,
@@ -123,7 +125,7 @@ def handle_signal(agent: AgentActor, payload: dict):
     agent_proposal_id = payload.get("agent_proposal_id")
     if agent_proposal_id is not None:
         agent.latest_proposal_id = agent_proposal_id
-        
+
     phase_type = payload.get("type")
 
     if phase_type == "Propose":
@@ -346,13 +348,15 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
 
         # Use agent's RNG seed for deterministic generation
         seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
-        logger.info(f"[LLM-REVISE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})")
-        logger.info(f"[LLM-PROPOSE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})")
+        logger.info(
+            f"[LLM-REVISE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})"
+        )
+        logger.info(
+            f"[LLM-PROPOSE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})"
+        )
 
         ## dump context for debugging
         ## make filename, from agent id, tick, phase
-        from pathlib import Path
-
         debug_dir = Path("debug")
         debug_dir.mkdir(parents=True, exist_ok=True)
         filename = f"context_{agent.agent_id}_{tick}_{phase_tick}_propose.txt"
@@ -386,7 +390,7 @@ def handle_propose_llm(agent: AgentActor, payload: dict):
             content = generate_proposal_content(
                 agent, problem_statement, traits, model, context_window
             )
-            
+
             proposal = Proposal(
                 proposal_id=0,  # Placeholder - will be assigned by bureau
                 content=content,
@@ -707,11 +711,11 @@ def handle_feedback_llm(agent: AgentActor, payload: dict):
 
         # Use agent's RNG seed for deterministic generation
         seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
-        logger.info(f"[LLM-REVISE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})")
+        logger.info(
+            f"[LLM-REVISE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})"
+        )
 
         # Dump context for debugging
-        from pathlib import Path
-
         debug_dir = Path("debug")
         debug_dir.mkdir(parents=True, exist_ok=True)
         phase_tick = state.phase_tick
@@ -878,7 +882,9 @@ def generate_proposal_content(
 
         # Use agent's RNG seed for deterministic generation
         seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
-        logger.info(f"[LLM-REVISE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})")
+        logger.info(
+            f"[LLM-REVISE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})"
+        )
 
         return one_shot(
             system_prompt,
@@ -1271,11 +1277,11 @@ def handle_revise_llm(agent: AgentActor, payload: dict):
 
         # Use agent's RNG seed for deterministic generation
         seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
-        logger.info(f"[LLM-REVISE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})")
+        logger.info(
+            f"[LLM-REVISE] {agent.agent_id} using seed {seed} (agent.seed={agent.seed})"
+        )
 
         # Dump context for debugging
-        from pathlib import Path
-
         debug_dir = Path("debug")
         debug_dir.mkdir(parents=True, exist_ok=True)
         filename = f"context_{agent.agent_id}_{tick}_{phase_tick}_revise.txt"
@@ -1332,7 +1338,7 @@ def handle_revise_llm(agent: AgentActor, payload: dict):
                     context_window,
                 )
                 new_content = new_content.strip()
-                
+
                 if not new_content:
                     logger.error(
                         f"[REVISE-LLM] {agent.agent_id} LLM generated empty revision content. Defaulting to signal_ready."
@@ -1343,7 +1349,10 @@ def handle_revise_llm(agent: AgentActor, payload: dict):
                         "revise",
                         tick,
                         f"LLM revision failed due to empty generated content: {decision.reasoning[:50]}...",
-                        {"llm_reasoning": decision.reasoning, "error": "empty_generated_content"},
+                        {
+                            "llm_reasoning": decision.reasoning,
+                            "error": "empty_generated_content",
+                        },
                     )
                     return {"ack": True}
             except Exception as exc:

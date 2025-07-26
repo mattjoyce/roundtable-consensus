@@ -1,3 +1,5 @@
+"""Controller for managing consensus simulation execution and state."""
+
 from collections import defaultdict
 from typing import Optional
 
@@ -11,6 +13,7 @@ from models import (
     Proposal,
     RoundtableState,
     RunConfig,
+    StakeRecord,
     UnifiedConfig,
 )
 from roundtable import Consensus
@@ -18,6 +21,7 @@ from simlog import EventType, LogEntry, LogLevel, PhaseType, log_event, logger
 
 
 class Controller:
+    """Main controller for orchestrating consensus simulation execution."""
     def __init__(self, agent_pool: AgentPool):
         self.agent_pool = agent_pool
         self.config: Optional[UnifiedConfig] = None
@@ -299,6 +303,7 @@ class Controller:
                 self.receive_unstake(action.agent_id, action.payload)
 
     def receive_proposal(self, agent_id: str, proposal: Proposal):
+        """Process a proposal submission from an agent."""
         tick = self.state.tick if self.current_consensus else 0
         phase = self.state.current_phase if self.current_consensus else None
         issue_id = self.state.current_issue.issue_id
@@ -381,14 +386,12 @@ class Controller:
         proposal.author_type = "agent"
         proposal.type = "standard"
         proposal.revision_number = 1
-        
 
         # Store proposal in Issue
         self.state.current_issue.add_proposal(proposal)
         self.state.current_issue.assign_agent_to_proposal(
             agent_id, proposal.proposal_id
         )
-
 
         # Stake CP to proposal
         stake_success = self.creditmgr.stake_to_proposal(
@@ -420,6 +423,7 @@ class Controller:
     def create_no_action_proposal(
         self, tick: int, agent_id: str, issue_id: str
     ) -> Proposal:
+        """Create the default 'no action' proposal."""
         proposal = Proposal(
             proposal_id=0,  # NoAction always uses ID 0
             content="Take no Action",
@@ -434,6 +438,7 @@ class Controller:
         return proposal
 
     def signal_ready(self, agent_id: str, payload: Optional[dict] = None):
+        """Process agent ready signal for phase completion."""
         log_event(
             LogEntry(
                 tick=(self.state.tick if self.current_consensus else 0),
@@ -707,7 +712,6 @@ class Controller:
         # Update agent assignment to new version
         self.state.current_issue.agent_to_proposal_id[agent_id] = new_proposal_id
 
-
         # Transfer stake from old to new proposal
         stake_transferred = self.creditmgr.transfer_stake(
             old_proposal_id=proposal_id,
@@ -859,8 +863,6 @@ class Controller:
 
         if deduct_success:
             # Create voluntary stake record in the stake ledger
-            from models import StakeRecord
-
             stake_record = StakeRecord(
                 agent_id=agent_id,
                 proposal_id=int(proposal_id),

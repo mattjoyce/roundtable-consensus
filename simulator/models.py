@@ -1,4 +1,4 @@
-# models.py
+"""Core data models for the roundtable consensus simulation."""
 import random
 import uuid
 from typing import Any, Dict, List, Literal, Optional
@@ -10,6 +10,7 @@ from simlog import log_event, logger
 
 
 class StakeRecord(BaseModel):
+    """Record of a staking transaction in the consensus system."""
     """Atomic stake ledger entry as defined in staking-and-conviction-notes.md"""
 
     stake_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -23,6 +24,7 @@ class StakeRecord(BaseModel):
 
 
 class Proposal(BaseModel):
+    """A proposal submitted by an agent in the consensus process."""
     tick: int
     proposal_id: int  # Sequential integer ID
     content: str
@@ -38,12 +40,14 @@ class Proposal(BaseModel):
 
 
 class Agent(BaseModel):
+    """Basic agent model with identifier and balance."""
     agent_id: str
     balance: int
     metadata: Optional[Dict[str, str]] = {}
 
 
 class AgentActor(BaseModel):
+    """Active agent participant with RNG, memory, and signal handling capabilities."""
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     agent_id: str
@@ -75,25 +79,28 @@ class AgentActor(BaseModel):
 
 
 class AgentPool(BaseModel):
+    """Collection of agents available for selection in consensus scenarios."""
     model_config = ConfigDict(frozen=True)
 
     agents: Dict[str, AgentActor]
 
     def get(self, agent_id: str) -> AgentActor:
+        """Get an agent by ID."""
         return self.agents[agent_id]
 
-    def select_random(self, n: int, seed: int = None) -> Dict[str, AgentActor]:
-        import random
-
+    def select_random(self, num_agents: int, seed: int = None) -> Dict[str, AgentActor]:
+        """Select a random subset of agents."""
         rng = random.Random(seed)
-        selected_ids = rng.sample(list(self.agents.keys()), n)
+        selected_ids = rng.sample(list(self.agents.keys()), num_agents)
         return {aid: self.agents[aid] for aid in selected_ids}
 
     def get_all_ids(self) -> List[str]:
+        """Get all agent IDs in the pool."""
         return list(self.agents.keys())
 
 
 class Action(BaseModel):
+    """An action submitted by an agent to the action queue."""
     type: Literal[
         "submit_proposal",
         "feedback",
@@ -108,13 +115,16 @@ class Action(BaseModel):
 
 
 class ActionQueue(BaseModel):
+    """Queue for managing agent actions during consensus phases."""
     queue: List[Action] = []
 
     def submit(self, action: Action):
+        """Add an action to the queue."""
         self.queue.append(action)
         logger.debug(f"Action submitted: {action.type} by {action.agent_id}")
 
     def drain(self) -> List[Action]:
+        """Remove and return all actions from the queue."""
         drained = self.queue.copy()
         self.queue.clear()
         return drained
@@ -125,6 +135,7 @@ ACTION_QUEUE = ActionQueue()
 
 
 class GlobalConfig(BaseModel):
+    """Global configuration parameters for consensus simulation."""
     model_config = ConfigDict(frozen=True)
 
     assignment_award: int = Field(ge=1)
@@ -147,6 +158,7 @@ class GlobalConfig(BaseModel):
 
 
 class RunConfig(BaseModel):
+    """Configuration for a specific consensus simulation run."""
     model_config = ConfigDict(frozen=True)
 
     seed: int
@@ -156,6 +168,7 @@ class RunConfig(BaseModel):
     initial_proposals: Dict[str, str]
 
     def get_initial_balances(self) -> Dict[str, int]:
+        """Get initial balance mapping for all selected agents."""
         return {
             aid: agent.initial_balance for aid, agent in self.selected_agents.items()
         }
@@ -310,8 +323,13 @@ class RoundtableState(BaseModel):
             "agent_readiness": json.dumps(self.agent_readiness),
             "agent_proposal_ids": json.dumps(self.agent_proposal_ids),
             "proposals": json.dumps(
-                [proposal.model_dump() for proposal in self.current_issue.proposals if proposal.active] 
-                if self.current_issue else []
+                [
+                    proposal.model_dump()
+                    for proposal in self.current_issue.proposals
+                    if proposal.active
+                ]
+                if self.current_issue
+                else []
             ),
             "stake_ledger": json.dumps(
                 [stake.model_dump() for stake in self.stake_ledger]
@@ -325,6 +343,7 @@ class RoundtableState(BaseModel):
 
 
 class Issue(BaseModel):
+    """An issue being decided by consensus with proposals and feedback."""
     issue_id: str
     problem_statement: str
     background: str
