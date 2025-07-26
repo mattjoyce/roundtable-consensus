@@ -65,6 +65,33 @@ Create labels via **Repo → Settings → Labels**. Our GitHub Action moves the
 5. **Merge** → file moves to `/rfcs/accepted/` or `/rejected/`. Bump spec version & CHANGELOG if accepted.
 6. **Implementation** tasks tracked as regular `area:code` Issues referencing the RFC.
 
+### Complex RFC Decomposition Process
+
+For RFCs with 3+ distinct components, use this atomic decomposition approach:
+
+**Issue → Atomic Issue → Comment → Tag to accept → RFC Instruct (/rfc) → Consolidated Drafting**
+
+1. **Atomic Issue Decomposition** → break complex RFC into discrete sub-issues:
+   - Each component = individual GitHub issue with `area:spec` label  
+   - Clear spec integration guidance (section, rationale, type)
+   - Links back to parent RFC issue
+2. **Comment & Review** → evaluate each atomic issue individually:
+   - Add context, concerns, modifications to each sub-issue
+   - Fold in related discussions from critiques or other issues  
+3. **Tag to Accept** → individual decisions per atomic issue:
+   - `/accept` - include in next spec version
+   - `/reject` - close as won't implement
+   - `/defer` - revisit in future version
+4. **RFC Instruct** → maintainer comment `/rfc` triggers consolidation:
+   - Collects all accepted atomic issues
+   - Creates formal consolidated drafting plan
+5. **Consolidated Drafting** → apply accepted changes to spec:
+   - One commit per accepted atomic issue
+   - Clear traceability from issue → spec change
+   - Version bump and changelog update
+
+**Example:** RFC-005 (6 components) → Issues #17-22 → Individual accept/reject → `/rfc` → Spec integration
+
 ---
 
 ## 6  RFC Template (excerpt)
