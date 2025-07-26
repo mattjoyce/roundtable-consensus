@@ -23,7 +23,16 @@ class FeedbackDecision(BaseModel):
     """Structured response model for agent feedback decisions."""
 
     action: Literal["provide_feedback", "wait"]
-    target_proposals: list[int]  # List of proposal IDs to give feedback to (empty if waiting)
+    target_proposals: list[
+        int
+    ]  # List of proposal IDs to give feedback to (empty if waiting)
+    reasoning: str
+
+
+class ReviseDecision(BaseModel):
+    """Structured response model for agent revise decisions."""
+
+    action: Literal["revise", "signal_ready"]
     reasoning: str
 
 
@@ -168,7 +177,7 @@ def load_prompt(prompt_name: str) -> str:
 def load_agent_system_prompt() -> str:
     """
     Load the generic agent system prompt.
-    
+
     Traits and context are now provided via JSON context instead of injection.
 
     Returns:
