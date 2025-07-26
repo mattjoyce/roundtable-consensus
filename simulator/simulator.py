@@ -24,6 +24,7 @@ from simlog import (
     LogLevel,
 )
 from llm import one_shot, load_prompt
+from proposal_debug import generate_proposal_debug_files
 
 
 def parse_arguments():
@@ -95,7 +96,41 @@ def parse_arguments():
         help="Disable LLM usage and force RNG-based decisions for faster testing",
     )
 
+    parser.add_argument(
+        "--model",
+        type=str,
+        help="Disable LLM usage and force RNG-based decisions for faster testing",
+    )
+
+    parser.add_argument(
+        "--issue",
+        type=str,
+        help="Path to markdown file containing issue content to override issue generation",
+    )
+
     return parser.parse_args()
+
+
+def load_issue_from_file(file_path: str) -> str:
+    """
+    Load issue content from a markdown file.
+
+    Args:
+        file_path: Path to markdown file containing issue content
+
+    Returns:
+        Issue content from file
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+        if not content:
+            raise ValueError("Issue file is empty")
+        logger.info(f"Loaded issue content from {file_path}")
+        return content
+    except Exception as exc:
+        logger.error(f"Failed to load issue from {file_path}: {exc}")
+        raise
 
 
 def generate_issue_content(seed: int, model: str = "gemma3n:e4b") -> str:
@@ -240,6 +275,12 @@ def main():
                 )
             )
 
+            # Override LLM model if specified
+            if args.model:
+                if "llm" not in config:
+                    config["llm"] = {}
+                config["llm"]["model"] = args.model
+
             global_config = GlobalConfig(
                 assignment_award=config["consensus"]["assignment_award"],
                 max_feedback_per_agent=config["consensus"]["max_feedback_per_agent"],
@@ -269,8 +310,12 @@ def main():
             )
 
             # Create a sample issue for the simulation
-            # Use LLM-generated problem statement if enabled, otherwise use config
-            if config.get("llm", {}).get("issue", False) and not args.nollm:
+            # Use issue file if provided, otherwise use LLM generation or config
+            if args.issue:
+                problem_statement = load_issue_from_file(args.issue)
+                if not args.quiet:
+                    logger.info(f"Using issue from file: {args.issue}")
+            elif config.get("llm", {}).get("issue", False) and not args.nollm:
                 model = config.get("llm", {}).get("model", "gemma3n:e4b")
                 problem_statement = generate_issue_content(scenario_seed, model)
                 if not args.quiet:
@@ -308,6 +353,14 @@ def main():
                 logger.info(f"  {result['summary']}")
             else:
                 print(f"✓ ({round_duration:.2f}s)")
+
+            # Generate proposal debug files after scenario completion
+            try:
+                generate_proposal_debug_files(sim_id, issue.issue_id)
+                if not args.quiet:
+                    logger.info(f"Generated proposal debug files for scenario {i + 1}")
+            except Exception as e:
+                logger.warning(f"Failed to generate proposal debug files for scenario {i + 1}: {e}")
 
             log_event(
                 LogEntry(

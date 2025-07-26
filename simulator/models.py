@@ -58,6 +58,7 @@ class AgentActor(BaseModel):
         """Handle signals sent to the agent."""
         # Import here to avoid circular dependency
         from automoton import handle_signal
+
         return handle_signal(self, payload)
 
     def clone(self) -> "AgentActor":
@@ -308,6 +309,10 @@ class RoundtableState(BaseModel):
             "agent_balances": json.dumps(self.agent_balances),
             "agent_readiness": json.dumps(self.agent_readiness),
             "agent_proposal_ids": json.dumps(self.agent_proposal_ids),
+            "proposals": json.dumps(
+                [proposal.model_dump() for proposal in self.current_issue.proposals if proposal.active] 
+                if self.current_issue else []
+            ),
             "stake_ledger": json.dumps(
                 [stake.model_dump() for stake in self.stake_ledger]
             ),
@@ -338,10 +343,13 @@ class Issue(BaseModel):
         """Add a proposal to this issue."""
         self.proposals.append(proposal)
         self.agent_to_proposal_id[proposal.agent_id] = proposal.proposal_id
-        
+
         # Log proposal addition to track array changes
         from simlog import logger
-        logger.info(f"📝 Issue {self.issue_id}: Added proposal #{proposal.proposal_id} from {proposal.author}. Total proposals: {len(self.proposals)}")
+
+        logger.info(
+            f"📝 Issue {self.issue_id}: Added proposal #{proposal.proposal_id} from {proposal.author}. Total proposals: {len(self.proposals)}"
+        )
 
     def get_proposal(self, proposal_id: str) -> Optional[Dict]:
         """Get a proposal by ID."""

@@ -381,6 +381,7 @@ class Controller:
         proposal.author_type = "agent"
         proposal.type = "standard"
         proposal.revision_number = 1
+        
 
         # Store proposal in Issue
         self.state.current_issue.add_proposal(proposal)
@@ -388,10 +389,6 @@ class Controller:
             agent_id, proposal.proposal_id
         )
 
-        # Update agent's latest_proposal_id
-        selected_agent = self.config.selected_agents.get(agent_id)
-        if selected_agent:
-            selected_agent.latest_proposal_id = new_proposal_id
 
         # Stake CP to proposal
         stake_success = self.creditmgr.stake_to_proposal(
@@ -682,6 +679,8 @@ class Controller:
         old_proposal.active = False
 
         # Create new versioned proposal
+        # Prepend calling location to trace content flow
+        new_content = f"**controller.receive_revision({agent_id}):**\n\n{new_content}"
 
         new_proposal = Proposal(
             proposal_id=new_proposal_id,
@@ -708,10 +707,6 @@ class Controller:
         # Update agent assignment to new version
         self.state.current_issue.agent_to_proposal_id[agent_id] = new_proposal_id
 
-        # Update agent's latest_proposal_id
-        selected_agent = self.config.selected_agents.get(agent_id)
-        if selected_agent:
-            selected_agent.latest_proposal_id = new_proposal_id
 
         # Transfer stake from old to new proposal
         stake_transferred = self.creditmgr.transfer_stake(

@@ -80,73 +80,94 @@ def enhance_context_for_call(agent, payload, call_type):
     Build comprehensive JSON context for LLM calls.
     Returns structured data that LLMs can easily parse.
     """
-    
+
     # Extract agent traits from metadata
     profile = agent.metadata.get("protocol_profile", {})
-    
+
     # Build universal context structure
     context = {
         "agent": {
             "id": agent.agent_id,
             "traits": profile,
-            "memory": getattr(agent, 'memory', {}),
-            "balance": payload.get("current_balance", getattr(agent, 'initial_balance', 0))
+            "memory": getattr(agent, "memory", {}),
+            "balance": payload.get(
+                "current_balance", getattr(agent, "initial_balance", 0)
+            ),
         },
         "current_state": {
             "tick": payload.get("tick", 0),
             "phase_tick": payload.get("phase_tick", 0),
             "max_phase_ticks": payload.get("max_phase_ticks"),
             "phase": payload.get("phase", call_type),
-            "issue_id": payload.get("issue_id", "unknown")
-        }
+            "issue_id": payload.get("issue_id", "unknown"),
+        },
         # Skip payload entirely to avoid redundancy and serialization issues
     }
-    
+
     # Add state-specific information if available
     state = payload.get("state")
-    if state and hasattr(state, 'current_issue') and state.current_issue:
+    if state and hasattr(state, "current_issue") and state.current_issue:
         issue = state.current_issue
         context["current_state"]["issue"] = {
             "id": issue.issue_id,
-            "problem_statement": getattr(issue, 'problem_statement', ''),
-            "background": getattr(issue, 'background', ''),
+            "problem_statement": getattr(issue, "problem_statement", ""),
+            "background": getattr(issue, "background", ""),
             "proposals": [
                 {
                     "id": p.proposal_id,
                     "content": p.content,
                     "author": p.author,
-                    "active": getattr(p, 'active', True),
-                    "tick": p.tick
+                    "active": getattr(p, "active", True),
+                    "tick": p.tick,
                 }
                 for p in issue.proposals
-                if getattr(p, 'active', True)  # Only include active proposals
+                if getattr(p, "active", True)  # Only include active proposals
             ],
-            "feedback_log": getattr(issue, 'feedback_log', [])
+            "feedback_log": getattr(issue, "feedback_log", []),
         }
-    
+
+        # For revise phase, add agent-specific feedback received
+        if call_type == "revise_decision":
+            agent_feedback = []
+            feedback_log = getattr(issue, "feedback_log", [])
+            # Find feedback on agent's proposal
+            agent_proposal_id = None
+            for p in issue.proposals:
+                if p.author == agent.agent_id and getattr(p, "active", True):
+                    agent_proposal_id = p.proposal_id
+                    break
+
+            if agent_proposal_id is not None:
+                agent_feedback = [
+                    fb for fb in feedback_log if fb.get("to") == agent_proposal_id
+                ]
+
+            context["current_state"]["agent_feedback_received"] = agent_feedback
+
     # Add agent pool information if available - only include agents that are actually participating
     agent_pool = payload.get("agent_pool")
-    if agent_pool and hasattr(agent_pool, 'agents'):
+    if agent_pool and hasattr(agent_pool, "agents"):
         # Only include agents that have submitted proposals or are actively participating
         participating_agents = []
-        if state and hasattr(state, 'current_issue') and state.current_issue:
+        if state and hasattr(state, "current_issue") and state.current_issue:
             # Get agents who have submitted proposals
-            proposal_authors = {p.author for p in state.current_issue.proposals if p.author != "system"}
+            proposal_authors = {
+                p.author for p in state.current_issue.proposals if p.author != "system"
+            }
             for agent_id in proposal_authors:
                 if agent_id != agent.agent_id and agent_id in agent_pool.agents:
                     other_agent = agent_pool.agents[agent_id]
                     other_profile = other_agent.metadata.get("protocol_profile", {})
                     # Only include if they actually have traits
                     if other_profile:
-                        participating_agents.append({
-                            "id": agent_id,
-                            "traits": other_profile
-                        })
-        
+                        participating_agents.append(
+                            {"id": agent_id, "traits": other_profile}
+                        )
+
         # Only add the section if we have useful data
         if participating_agents:
             context["current_state"]["other_agents"] = participating_agents
-    
+
     return json.dumps(context, indent=2)
 
 

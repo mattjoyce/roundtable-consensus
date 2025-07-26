@@ -160,6 +160,7 @@ class SQLiteSink:
                 agent_balances TEXT,
                 agent_readiness TEXT,
                 agent_proposal_ids TEXT,
+                proposals TEXT,
                 stake_ledger TEXT,
                 credit_events TEXT,
                 execution_ledger TEXT,
@@ -206,10 +207,10 @@ class SQLiteSink:
             """
             INSERT INTO state_snapshots (
                 tick, phase, phase_tick, agent_balances, agent_readiness,
-                agent_proposal_ids, stake_ledger, credit_events,
+                agent_proposal_ids, proposals, stake_ledger, credit_events,
                 execution_ledger, proposal_counter, issue_finalized,
                 finalization_tick
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 state_data["tick"],
@@ -218,6 +219,7 @@ class SQLiteSink:
                 state_data["agent_balances"],
                 state_data["agent_readiness"],
                 state_data["agent_proposal_ids"],
+                state_data["proposals"],
                 state_data["stake_ledger"],
                 state_data["credit_events"],
                 state_data["execution_ledger"],

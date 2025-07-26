@@ -1,5 +1,6 @@
 """Round Table Consensus phase management and execution system."""
 
+import os
 from typing import List, Dict
 
 from models import (
@@ -154,18 +155,18 @@ class ProposePhase(Phase):
         if not creditmgr or not state.current_issue:
             return
 
-        # Find unready agents and ready agents without stakes
+        # Find unready agents and ready agents without proposal links
         all_agent_ids = set(creditmgr.get_all_balances().keys())
         unready_agents = [
             aid for aid, ready in state.agent_readiness.items() if not ready
         ]
-        unassigned_ready = [
+        unlinked_ready = [
             agent_id
             for agent_id in all_agent_ids
             if agent_id not in unready_agents
-            and not state.current_issue.is_assigned(agent_id)
+            and agent_id not in state.current_issue.agent_to_proposal_id
         ]
-        unstaked_agents = unready_agents + unassigned_ready
+        unstaked_agents = unready_agents + unlinked_ready
 
         if unstaked_agents:
             # Get NoAction proposal (should exist from _begin)
