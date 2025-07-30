@@ -1,101 +1,130 @@
 # Round Table Consensus
 
-> **Transparent, deterministic democratic decision‑making for mixed AI‑human teams**
+**Structured Deliberation for Autonomous Agents and Humans**
 
-> \[!NOTE] **Work‑in‑Progress:** The reference simulator does not yet implement every rule in the spec. Expect breaking changes until we reach **v1.2.0**.
+Round Table Consensus (RTC) is an experimental protocol for achieving consensus through structured, transparent deliberation. It is designed for both autonomous agents and human participants, simulating fair and accountable decision-making under constrained resources and imperfect agreement.
 
----
-[round-table-consensus](https://github.com/mattjoyce/roundtable-consensus/blob/master/spec/round-table-consensus-latest.md)
----
-
-
-## Why Round Table Consensus?
-
-When groups that include **both human and AI agents** have to make real decisions, we run into three chronic problems:
-
-| Problem                          | Traditional fix                 | Why it fails                               |
-| -------------------------------- | ------------------------------- | ------------------------------------------ |
-| Preference strength is invisible | One‑person‑one‑vote             | Ignores how *much* someone cares           |
-| Discussion quality is low        | Pure yes/no voting              | No space to refine ideas first             |
-| Audit trails are brittle         | Ad‑hoc minutes / off‑chain chat | Hard to reconstruct who decided what, when |
-
-Round Table Consensus (RTC) solves all three by combining a deliberative **Revise phase** with a market‑style **Conviction Point** (CP) allocation—while logging every event to an append‑only ledger.
+This repository contains the **reference implementation** of version **v1.2.0** — now recognized as the **canonical release**.
 
 ---
 
-## How It Works — 30‑Second Flow
+## 🔍 What Is It?
 
-1. **Propose** — Every agent submits one proposal (or backs the canonical `NoAction`); the protocol auto‑stakes `ProposalSelfStake` CP on their own draft.
+Round Table Consensus is **not a voting system**. It is a **protocol for collaborative preference aggregation**, implemented as a staged simulation with agents, proposals, feedback, revision, and conviction-based staking.
 
-2. **Feedback** — Agents review peers’ proposals and leave up to `MaxFeedbackPerAgent` comments (costing `FeedbackStake` CP) to sharpen ideas and flag issues.
+Each participant operates within a fixed Credit Point (CP) budget. Their decisions — to propose, revise, or stake — are resource-constrained and visible, revealing the intensity of their preferences.
 
-3. **Revise** — Authors may update their own proposals, paying a revision cost proportional to the size of the change.
-
-4. **Stake** — Each agent allocates their remaining Conviction Points across whichever proposals they support; conviction multipliers reward steadfast support over multiple staking rounds.
-
-5. **Finalize** — The proposal with the highest conviction‑weighted score wins; all staked CP are burned (or frozen per RFC‑001), and the result is recorded.
-
-6. **Ledger Commit** — Every action and credit flow is written to an append‑only log for full auditability.
-
-```bash
-# clone & set up
-$ git clone https://github.com/<your-org>/roundtable-consensus.git
-$ cd roundtable-consensus
-$ python -m venv .venv && source .venv/bin/activate
-$ pip install -r requirements.txt
-
-# run three‑agent example
-$ python simulator.py examples/three_agents.json
-```
-
-The simulator prints a step‑by‑step trace and closes with an ASCII ledger summary. 
+Key properties:
+- **Phase-based structure**: Clear demarcation of decision-making stages
+- **Conviction staking**: Stake value grows over time to reward early commitment
+- **Atomic stake records**: Every stake is tracked as a discrete ledger entry
+- **Structured feedback and revision**: Encourages refinement, not just opposition
+- **No economic value**: CPs are not tradable tokens; they are spent to express care
 
 ---
 
-## Repository Layout
+## 🧠 Protocol Design Philosophy
 
-```
-/spec/       → Versioned Markdown spec documents
-/rfcs/       → Draft, accepted, and rejected RFCs (see below)
-/simulator/  → Reference Python implementation
-/docs/       → Extended design notes and maths
-```
+Consensus should emerge from *careful deliberation*, not competition. Round Table Consensus encodes several core beliefs:
 
----
-
-## Contributing
-
-We welcome both humans **and AI agents** as contributors. The workflow is intentionally lightweight:
-
-1. **Open an Issue**
-   Use the *Spec Question*, *Spec Enhancement*, or *Code Bug* templates. Labels `area:spec` vs `area:code` keep things separate.
-2. **For spec‑level changes**
-   Fork / branch → add a Markdown file under `/rfcs/draft/` following [.github/rfc-template.md](.github/rfc-template.md). Open a **Draft PR**; “lazy consensus” rules apply (72 h silence ⇒ move to *Last‑Call*).
-3. **Merge & Tag**
-   Accepted RFCs move to `/rfcs/accepted/` and bump the spec (e.g. v1.0.0 → v1.1.0). Implementation PRs can follow.
-
-Full details live in [docs/RFC‑workflow.md](docs/RFC-workflow.md).
+- **Burn reveals preference**: Agents must burn CP to express what they care about
+- **Time matters**: Early commitments are worth more via conviction accrual
+- **Revision is constrained**: Agents can revise but must manage cost and timing
+- **Noaction is valid**: An explicit "do nothing" proposal anchors the system
+- **Simplicity over economics**: No stake farming, yield, or currency games
 
 ---
 
-## Roadmap Highlights
+## 🔄 Protocol Phases
 
-* **RFC‑001 – Canonical NoAction merge rule** *(Last‑Call)*
-* **HTML ledger explorer**
-* **Agent plug‑in API** for alternative evaluation heuristics
+Each run of the protocol progresses through five distinct phases:
 
-Track progress on the [project board](https://github.com/<your-org>/roundtable-consensus/projects/1).
+### 1. **Propose**  
+Agents can:
+- Submit a proposal (must self-stake)
+- Signal readiness without proposing
+
+### 2. **Feedback**  
+Agents can:
+- Provide feedback on up to N proposals
+- Each feedback costs CP
+
+### 3. **Revise**  
+Agents can:
+- Revise their own proposal (if feedback exists)
+- Signal readiness
+
+### 4. **Stake**  
+Agents can:
+- Stake CP on any active proposal (not their own)
+- Switch existing voluntary stake to a different proposal
+- Unstake voluntary stake
+
+Conviction is calculated **per stake**, using an age-based multiplier.
+
+### 5. **Finalize**  
+The proposal with the highest **total conviction** becomes the decision. All others are archived.
 
 ---
 
-## Documentation
+## 🔢 Conviction Mechanics
 
-| Doc                      | What’s inside                             |
-| ------------------------ | ----------------------------------------- |
-| **Protocol Spec v1.0.0** | Formal rules (deterministic, test‑able)   |
-| **System Overview**      | Architecture diagram, security notes      |
-| **Math Appendix**        | Proof sketches for fairness & termination |
+- Every stake includes: agent, proposal, tick, and CP
+- Conviction multiplier: increases per tick since staking
+- Mandatory (self) stake is non-reversible
+- Switching stake resets conviction
+- Noaction can be staked like any other proposal
+
+Conviction = CP × f(age)
 
 ---
 
-> *Built with the conviction that AI‑human collaboration should be accountable by design.*
+## 🧪 Simulation Features
+
+- Python-based simulation using deterministic seeds
+- Supports local Ollama LLM agents and handcrafted agent types
+- Trait-based agent personalities influence behavior
+- Rich event logging and snapshotting for forensic replay
+
+---
+
+## 📁 Repo Structure
+
+- `simulator.py` – entry point for scenario runs
+- `models.py` – core data types: agents, proposals, stakes, issues
+- `roundtable.py` – protocol FSM
+- `primer.py` – agent selection and trait mutation
+- `controller.py` – top-level orchestration
+- `context_builder.py` – structured prompt assembly for LLMs
+- `llm.py` – local model execution
+- `simlog.py` – structured logging system
+
+---
+
+## 🛣️ Roadmap
+
+Current version: **v1.2.0** — canonical, complete
+
+Planned explorations (post-1.2):
+- Sub-protocols for dispute or synthesis
+- Stackable consensus (meta-groups)
+- Reputation tracking
+- Blinding mechanisms for partial information
+- Multi-issue federated deliberation
+
+---
+
+## 📚 Documentation
+
+- [Protocol Specification (v1.2.0)](./spec/round-table-consensus-v1.2.0.md)
+- [RFC Index](./rfc/README.md)
+- [Staking & Conviction Notes](./docs/staking-and-conviction-notes.md)
+
+---
+
+## 🤝 Acknowledgements
+
+This protocol is the product of many conversations, critiques, and refinements. Special thanks to agents Gemini and Claude for rigorous adversarial review.
+
+If you’re reading this: welcome to the table. You are now part of the experiment.
+
