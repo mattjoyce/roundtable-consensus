@@ -202,7 +202,7 @@ PROPOSE → ( FEEDBACK → REVISE ) × `RevisionCycles` → …
 
 ## 13. Ledger & Transparency
 
-* **13.1 Immutable Event Log** – Every state‑changing action (credit, debit, burn, stake transfer, proposal creation, feedback submission, etc.) is appended to an immutable event log with a deterministic sequence number.
+* **13.1 Immutable Event Log** – Every state‑changing action (credit, debit, burn, stake transfer, proposal creation, feedback submission, etc.) is appended to an immutable event log with a deterministic sequence number. Stake events are revealed to agents one tick after they occur to support blind staking mechanics.
 * **13.2 Burn Events** – Whenever Conviction Points are burned (e.g., via `FeedbackStake` or `KickOutPenalty`), a `Burn` event is recorded specifying: `AgentID`, `Amount`, `Reason`, `ParentIssueID`, and `Tick`.
 * **13.3 Auditability** – At any time, the entire Conviction Point supply can be reconciled by summing initial allocations minus all recorded burns, ensuring full supply transparency without the need for per‑Issue treasuries.
 
@@ -255,6 +255,12 @@ Optional: A system‑wide or per‑issue cap may limit the number of revisions (
   * `MaxThinkTicks` have elapsed without input from one or more agents.
 * **16.1.2 Silent Agent Behavior** – If an agent does not act or signal by the timeout, their stake is assumed to persist unchanged. No penalty is applied.
 * **16.1.3 Hooks for External Pulses** – The orchestrator may emit periodic tick signals to agent `CustomHooks` to support loopless AI agents or polling-based infrastructure.
+
+### Blind Staking
+
+* **16.2.1 Stake Visibility** – During each STAKE round, stake submissions are appended to the ledger but not visible to other agents until the round completes. At the beginning of the next tick, all stakes from the previous round are revealed.
+* **16.2.2 Historical Stakes** – Agents can inspect all stakes logged prior to the current round, including each atomic stake's amount, target proposal, and conviction multiplier. This allows strategic decisions based on cumulative distribution between rounds.
+* **16.2.3 Fairness Rationale** – Hiding in-round stakes removes first-mover disadvantage and discourages strategic last-second adjustments while preserving full transparency over time.
 
 ### STAKE ₁
 
