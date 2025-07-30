@@ -155,6 +155,9 @@ class GlobalConfig(BaseModel):
 
     # LLM configuration
     llm_config: Dict[str, Any] = Field(default_factory=dict)
+    
+    # Debug configuration
+    debug_config: Dict[str, Any] = Field(default_factory=dict)
 
 
 class RunConfig(BaseModel):

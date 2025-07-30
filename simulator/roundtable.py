@@ -440,6 +440,13 @@ class StakePhase(Phase):
     ) -> None:
         """Initialize stake phase"""
         super()._begin(state, config, creditmgr)
+        
+        # Reset mandatory stakes to current tick for fair conviction aging
+        # This prevents initial proposal stakes from having unfair time advantage
+        mandatory_stakes = state.get_mandatory_stakes()
+        for stake in mandatory_stakes:
+            if stake.issue_id == config.issue_id and stake.status == "active":
+                stake.initial_tick = state.tick
 
         # # Transfer initial proposal stakes to conviction tracking on first STAKE round
         # if self.round_number == 1 and creditmgr:
@@ -493,6 +500,30 @@ class StakePhase(Phase):
         # NOTE: Removed auto_build_conviction - conviction now calculated directly from stake records
         # No artificial conviction building needed with atomic stake-based system
 
+        # Get all active stakes for this issue to provide atomic stake data
+        active_stakes = [
+            stake for stake in state.stake_ledger 
+            if stake.status == "active" and stake.issue_id == config.issue_id
+        ]
+        
+        # Build atomic stake data with conviction calculations
+        atomic_stakes = []
+        for stake in active_stakes:
+            age = state.tick - stake.initial_tick
+            conviction_multiplier = creditmgr.calculate_stake_conviction(stake, state.tick, self.conviction_params) / stake.cp
+            total_cp = stake.cp * conviction_multiplier
+            
+            atomic_stakes.append({
+                "stake_tick": stake.initial_tick,
+                "stake_id": stake.stake_id,
+                "agent_id": stake.agent_id,
+                "proposal_id": stake.proposal_id,
+                "staked_cp": stake.cp,
+                "age": age,
+                "conviction_multiplier": conviction_multiplier,
+                "total_cp": total_cp
+            })
+
         for agent in agents:
             # Include current balance in the signal
             current_balance = state.agent_balances.get(agent.agent_id, 0)
@@ -502,21 +533,6 @@ class StakePhase(Phase):
             # Get all available proposals for agent decision making
             all_proposals = list(state.agent_proposal_ids.values())
 
-            # Get current conviction data for switching decisions (stake-based)
-            # current_conviction = {}
-            # for agent in agents:
-            #     agent_stakes = state.get_active_stakes_by_agent(agent.agent_id)
-            #     if agent_stakes:
-            #         agent_convictions = {}
-            #         for stake in agent_stakes:
-            #             conviction = creditmgr.calculate_stake_conviction(stake, state.tick, self.conviction_params)
-            #             if conviction > 0:
-            #                 if stake.proposal_id not in agent_convictions:
-            #                     agent_convictions[stake.proposal_id] = 0
-            #                 agent_convictions[stake.proposal_id] += conviction
-            #         if agent_convictions:
-            #             current_conviction[agent.agent_id] = agent_convictions
-
             agent.on_signal(
                 payload={
                     "type": "Stake",
@@ -525,7 +541,8 @@ class StakePhase(Phase):
                     "phase": self,
                     "agent_proposal_id": current_proposal_id,
                     "agent_proposals": all_proposals,
-                    "agent_balance": current_balance,
+                    "current_balance": current_balance,
+                    "atomic_stakes": atomic_stakes,
                 }
             )
 

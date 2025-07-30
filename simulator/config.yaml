@@ -45,6 +45,12 @@ consensus:
     TargetFraction: 0.98
 
 # Issue generation
+# Debug settings
+debug:
+  enabled: false
+  output_dir: "debug"
+  save_context: false
+
 issue:
   problem_statement: "Sample problem statement for the issue."
   background: "Background information about the issue."

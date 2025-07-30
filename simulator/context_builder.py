@@ -1,9 +1,12 @@
 """
-JSON-based context builder for agent LLM calls.
-Provides comprehensive structured context in JSON format.
+Phase-specific context builder for agent LLM calls.
+Provides lean markdown context optimized for token efficiency.
 """
 
 import json
+from simlog import EventType, LogEntry, LogLevel, PhaseType, log_event, logger
+
+
 
 
 def build_feedback_context(state, all_proposal_contents, current_tick, agent_pool=None):
@@ -77,98 +80,34 @@ def build_feedback_context(state, all_proposal_contents, current_tick, agent_poo
 
 def enhance_context_for_call(agent, payload, call_type):
     """
-    Build comprehensive JSON context for LLM calls.
-    Returns structured data that LLMs can easily parse.
+    Build phase-specific markdown context for LLM calls.
+    Routes to appropriate phase builder based on call_type.
     """
-
-    # Extract agent traits from metadata
-    profile = agent.metadata.get("protocol_profile", {})
-
-    # Build universal context structure
-    context = {
-        "agent": {
-            "id": agent.agent_id,
-            "traits": profile,
-            "memory": getattr(agent, "memory", {}),
-            "balance": payload.get(
-                "current_balance", getattr(agent, "initial_balance", 0)
-            ),
-        },
-        "current_state": {
-            "tick": payload.get("tick", 0),
-            "phase_tick": payload.get("phase_tick", 0),
-            "max_phase_ticks": payload.get("max_phase_ticks"),
-            "phase": payload.get("phase", call_type),
-            "issue_id": payload.get("issue_id", "unknown"),
-        },
-        # Skip payload entirely to avoid redundancy and serialization issues
-    }
-
-    # Add state-specific information if available
+    
+    # Extract issue from state
     state = payload.get("state")
-    if state and hasattr(state, "current_issue") and state.current_issue:
-        issue = state.current_issue
-        context["current_state"]["issue"] = {
-            "id": issue.issue_id,
-            "problem_statement": getattr(issue, "problem_statement", ""),
-            "background": getattr(issue, "background", ""),
-            "proposals": [
-                {
-                    "id": p.proposal_id,
-                    "content": p.content,
-                    "author": p.author,
-                    "active": getattr(p, "active", True),
-                    "tick": p.tick,
-                }
-                for p in issue.proposals
-                if getattr(p, "active", True)  # Only include active proposals
-            ],
-            "feedback_log": getattr(issue, "feedback_log", []),
-        }
-
-        # For revise phase, add agent-specific feedback received
-        if call_type == "revise_decision":
-            agent_feedback = []
-            feedback_log = getattr(issue, "feedback_log", [])
-            # Find feedback on agent's proposal
-            agent_proposal_id = None
-            for p in issue.proposals:
-                if p.author == agent.agent_id and getattr(p, "active", True):
-                    agent_proposal_id = p.proposal_id
-                    break
-
-            if agent_proposal_id is not None:
-                agent_feedback = [
-                    fb for fb in feedback_log if fb.get("to") == agent_proposal_id
-                ]
-
-            context["current_state"]["agent_feedback_received"] = agent_feedback
-
-    # Add agent pool information if available - only include agents that are actually participating
-    agent_pool = payload.get("agent_pool")
-    if agent_pool and hasattr(agent_pool, "agents"):
-        # Only include agents that have submitted proposals or are actively participating
-        participating_agents = []
-        if state and hasattr(state, "current_issue") and state.current_issue:
-            # Get agents who have submitted proposals
-            proposal_authors = {
-                p.author for p in state.current_issue.proposals if p.author != "system"
-            }
-            for agent_id in proposal_authors:
-                if agent_id != agent.agent_id and agent_id in agent_pool.agents:
-                    other_agent = agent_pool.agents[agent_id]
-                    other_profile = other_agent.metadata.get("protocol_profile", {})
-                    # Only include if they actually have traits
-                    if other_profile:
-                        participating_agents.append(
-                            {"id": agent_id, "traits": other_profile}
-                        )
-
-        # Only add the section if we have useful data
-        if participating_agents:
-            context["current_state"]["other_agents"] = participating_agents
-
-    return json.dumps(context, indent=2)
+    if not state or not hasattr(state, "current_issue") or not state.current_issue:
+        # Fallback for missing state - return minimal context
+        return f"# Agent: {agent.agent_id}\n\nNo issue context available."
+    
+    issue = state.current_issue
+    
+    # Route to appropriate phase-specific context builder
+    if call_type == "propose_decision":
+        return build_context_propose(agent, issue)
+    elif call_type == "feedback_decision":
+        return build_context_feedback(agent, issue)
+    elif call_type == "revise_decision":
+        return build_context_revise(agent, issue)
+    elif call_type == "stake_preferences":
+        return build_context_stake_preferences(agent, issue, payload)
+    elif call_type == "stake_action":
+        stored_preferences = payload.get("stored_preferences")
+        return build_context_stake_action(agent, issue, payload, stored_preferences)
+    else:
+        # Fallback for unknown call types
+        print(f"WARNING: Unknown call type '{call_type}' - using base context.")
+        return build_base_context(agent, issue)
 
 
 def build_propose_decision_context(agent, **kwargs):
@@ -233,4 +172,345 @@ def build_propose_decision_context(agent, **kwargs):
 
     context_lines.append("-----")
 
+    return "\n".join(context_lines)
+
+
+def build_base_context(agent, issue):
+    """
+    Build shared context elements that appear in all phases.
+    
+    Returns markdown with agent traits and issue problem statement.
+    """
+    # Extract traits from agent metadata
+    profile = agent.metadata.get("protocol_profile", {})
+    
+    context_lines = [f"# Agent: {agent.agent_id}", "", "## Traits"]
+    
+    # Add traits in a clean markdown list format
+    for trait_name, value in profile.items():
+        if isinstance(value, (int, float)):
+            context_lines.append(f"- {trait_name}: {value:.2f}")
+    
+    context_lines.extend(["", f"## Issue {issue.issue_id}", issue.problem_statement])
+    
+    return "\n".join(context_lines)
+
+
+def build_context_propose(agent, issue):
+    """
+    Build context for propose phase - clean and minimal.
+    
+    Per spec: Only shared elements (traits + issue), no prior proposals.
+    This is a creative, unconstrained phase.
+    """
+    return build_base_context(agent, issue)
+
+
+def build_context_feedback(agent, issue, selected_proposals=None):
+    """
+    Build context for feedback phase with curated proposals.
+    
+    Per spec: Shared elements + selected proposals for review.
+    No word counts, timestamps, or author traits.
+    """
+    context = build_base_context(agent, issue)
+    
+    if not selected_proposals:
+        # If no specific proposals selected, show active proposals (limit to 2 for token efficiency)
+        active_proposals = [p for p in issue.proposals if getattr(p, "active", True) and p.author != "system"]
+        selected_proposals = active_proposals[:2]
+    
+    if selected_proposals:
+        context += "\n\n"
+        for proposal in selected_proposals:
+            context += f"## Proposal {proposal.proposal_id} by {proposal.author}\n"
+            context += f"{proposal.content}\n\n"
+    
+    return context.rstrip()
+
+
+def build_context_revise(agent, issue):
+    """
+    Build context for revise phase with agent's proposal and feedback received.
+    
+    Per spec: Shared elements + agent's original proposal + curated feedback received.
+    No agent memory logs, word counts, or metadata.
+    """
+    context = build_base_context(agent, issue)
+    
+    # Find the agent's original proposal
+    agent_proposal = None
+    for proposal in issue.proposals:
+        if proposal.author == agent.agent_id and getattr(proposal, "active", True):
+            agent_proposal = proposal
+            break
+    
+    if agent_proposal:
+        context += f"\n\n## Your Original Proposal\n{agent_proposal.content}\n"
+    
+    # Find feedback received on agent's proposal
+    feedback_received = []
+    if hasattr(issue, 'feedback_log') and agent_proposal:
+        feedback_received = [
+            fb for fb in issue.feedback_log 
+            if fb.get("to") == agent_proposal.proposal_id
+        ]
+    
+    if feedback_received:
+        context += "\n"
+        for feedback in feedback_received:
+            context += f"## Feedback from {feedback['from']}\n"
+            context += f"{feedback['comment']}\n\n"
+    
+    return context.rstrip()
+
+
+def build_context_stake(agent, issue, payload):
+    """
+    Build context for stake phase with structured format for action decisions.
+    
+    This is used for Phase 2 (tactical actions) and includes preferences, ledger, and leaderboard.
+    """
+    # Get current state information
+    current_balance = payload.get("current_balance", 0)
+    tick = payload.get("tick", 0)
+    max_ticks = payload.get("max_ticks", 15)  # Default fallback
+    current_conviction = payload.get("current_conviction", {})
+    
+    # Extract traits from agent metadata
+    profile = agent.metadata.get("protocol_profile", {})
+    
+    # Start building context with agent information
+    context_lines = [
+        "# 🧠 Agent Context",
+        "",
+        "## Agent ID",
+        agent.agent_id,
+        "",
+        "## Your Traits",
+        "| Trait         | Value |",
+        "|---------------|-------|"
+    ]
+    
+    # Add traits table
+    for trait_name, value in profile.items():
+        if isinstance(value, (int, float)):
+            context_lines.append(f"| {trait_name:<13} | {value:<5.1f} |")
+    
+    return "\n".join(context_lines)
+
+
+def build_context_stake_preferences(agent, issue, payload):
+    """
+    Build context for stake preferences (Phase 1) - simpler format with proposals.
+    """
+    # Get current state information - NO DEFAULTS to expose missing data
+    logger.info(f"[STAKE-LLM] Building context for {agent.agent_id} at tick {payload.get('tick', 0)}")   
+    
+
+    current_balance = payload["current_balance"]  # Will KeyError if missing
+    tick = payload["tick"]  # Will KeyError if missing  
+    max_ticks = payload.get("max_ticks", 15)  # This one can have a default
+    
+    # Extract traits from agent metadata
+    profile = agent.metadata.get("protocol_profile", {})
+    
+    # Start building context with agent information
+    context_lines = [
+        "# 🧠 Agent Context",
+        "",
+        "## Agent ID",
+        agent.agent_id,
+        "",
+        "## Your Traits",
+        "| Trait         | Value |",
+        "|---------------|-------|"
+    ]
+    
+    # Add traits table
+    for trait_name, value in profile.items():
+        if isinstance(value, (int, float)):
+            context_lines.append(f"| {trait_name:<13} | {value:<5.1f} |")
+    
+    context_lines.extend([
+        "",
+        "## Credit Balance",
+        f"{current_balance} CP",
+        "",
+        "## Current Tick", 
+        f"Tick {tick} of {max_ticks}",
+        "",
+        "---",
+        "",
+        "# 📄 Active Proposals"
+    ])
+    
+    # Add proposals section
+    if hasattr(issue, 'proposals') and issue.proposals:
+        active_proposals = [p for p in issue.proposals if getattr(p, "active", True)]
+        
+        for proposal in active_proposals:
+            # Check if this is the agent's own proposal
+            is_own = proposal.author == agent.agent_id
+            proposal_title = f"## Proposal {proposal.proposal_id}"
+            if is_own:
+                proposal_title += " (Your Proposal)"
+            
+            context_lines.extend([
+                "",
+                proposal_title,
+                f"- **Author**: {proposal.author}",
+                "- **Content**:",
+                f"> {proposal.content}"
+            ])
+    else:
+        context_lines.extend([
+            "",
+            "No active proposals available."
+        ])
+    
+    
+    logger.debug(f"[STAKE-LLM] Preference context size = {len(context_lines)} lines")
+    return "\n".join(context_lines)
+
+
+def build_context_stake_action(agent, issue, payload, stored_preferences):
+    """
+    Build context for stake action decisions (Phase 2) with preferences, ledger, and leaderboard.
+    """
+    # Get current state information - NO DEFAULTS to expose missing data
+    print(f"PAYLOAD_DEBUG: Available keys: {list(payload.keys())}")
+    
+    # Fail explicitly if expected keys are missing
+    if "current_balance" not in payload:
+        print(f"ERROR: 'current_balance' not in payload. Available: {list(payload.keys())}")
+    if "tick" not in payload:
+        print(f"ERROR: 'tick' not in payload. Available: {list(payload.keys())}")
+    current_balance = payload["current_balance"]  # Will KeyError if missing
+    tick = payload["tick"]  # Will KeyError if missing  
+    max_ticks = payload.get("max_ticks", 15)  # This one can have a default
+    atomic_stakes = payload.get("atomic_stakes", [])  # List of atomic stake records
+    
+    # Extract traits from agent metadata
+    profile = agent.metadata.get("protocol_profile", {})
+    
+    # Start building context with agent information
+    context_lines = [
+        "# 🧠 Agent Context",
+        "",
+        "## Agent ID",
+        agent.agent_id,
+        "",
+        "## Your Traits",
+        "| Trait         | Value |",
+        "|---------------|-------|"
+    ]
+    
+    # Add traits table
+    for trait_name, value in profile.items():
+        if isinstance(value, (int, float)):
+            context_lines.append(f"| {trait_name:<13} | {value:<5.1f} |")
+    
+    # Add declared preferences table
+    context_lines.extend([
+        "",
+        "## Declared Preferences",
+        "| Proposal ID | Rank | Score | Reasoning Summary |",
+        "|-------------|------|-------|--------------------| "
+    ])
+    
+    # Sort preferences by rank and add to table
+    prefs_sorted = sorted(stored_preferences['preferences'], key=lambda x: x['rank'])
+    for pref in prefs_sorted:
+        # Truncate reasoning for table display
+        reasoning_summary = pref['reasoning'][:50] + "..." if len(pref['reasoning']) > 50 else pref['reasoning']
+        context_lines.append(f"| {pref['proposal_id']:<11} | {pref['rank']:<4} | {pref['preference_score']:<5.1f} | {reasoning_summary:<18} |")
+    
+    # Add tick progress
+    context_lines.extend([
+        "",
+        "---",
+        "",
+        "# ⏱️ Tick Progress",
+        "",
+        f"**Tick {tick} of {max_ticks}**",
+        "",
+        "---",
+        "",
+        "# 💰 CP Balance",
+        "",
+        f"**Remaining CP:** {current_balance}"
+    ])
+    
+    # Add active stake ledger
+    context_lines.extend([
+        "",
+        "---",
+        "",
+        "# 📑 Active Stake Ledger",
+        "",
+        "| Tick | Agent ID | Proposal ID | CP | Age (ticks) | Multiplier | CP × Multiplier |",
+        "|------|----------|-------------|----|-------------|------------|------------------|"
+    ])
+    
+    # Show ALL atomic stakes (from all agents), not just this agent's
+    self_proposal_id = stored_preferences.get('self_proposal_id')
+    has_stakes = len(atomic_stakes) > 0
+    
+    for stake in atomic_stakes:
+        # Mark if this stake is by the current agent
+        agent_marker = " (you)" if stake["agent_id"] == agent.agent_id else ""
+        agent_display = f"{stake['agent_id']}{agent_marker}"
+        context_lines.append(f"| {stake['stake_tick']:<4} | {agent_display:<8} | {stake['proposal_id']:<11} | {stake['staked_cp']:<2} | {stake['age']:<11} | {stake['conviction_multiplier']:<10.2f} | {stake['total_cp']:<15.1f} |")
+    
+    if not has_stakes:
+        context_lines.append("| --   | --       | --          | -- | --          | --         | --              |")
+        context_lines.append("")
+        context_lines.append("> **Note**: No active stakes.")
+    elif self_proposal_id and any(stake["proposal_id"] == self_proposal_id and stake["agent_id"] == agent.agent_id for stake in atomic_stakes):
+        context_lines.append("")
+        context_lines.append(f"> **Note**: You cannot unstake from Proposal {self_proposal_id} (your own), but you *may* switch this stake.")
+    
+    # Add proposal leaderboard
+    context_lines.extend([
+        "",
+        "---",
+        "",
+        "# 🏆 Proposal Leaderboard",
+        "",
+        "| Proposal ID | Total CP Staked | Effective Conviction Value |",
+        "|-------------|------------------|-----------------------------|"
+    ])
+    
+    # Calculate totals and effective values for leaderboard
+    if hasattr(issue, 'proposals') and issue.proposals:
+        active_proposals = [p for p in issue.proposals if getattr(p, "active", True)]
+        leaderboard_data = []
+        
+        for proposal in active_proposals:
+            proposal_id = proposal.proposal_id
+            total_cp = 0
+            effective_conviction = 0.0
+            
+            # Calculate totals from atomic stakes
+            proposal_stakes = [stake for stake in atomic_stakes if stake["proposal_id"] == proposal_id]
+            for stake in proposal_stakes:
+                total_cp += stake["staked_cp"]
+                effective_conviction += stake["total_cp"]
+            
+            leaderboard_data.append((proposal_id, total_cp, effective_conviction))
+        
+        # Sort by effective conviction value (descending)
+        leaderboard_data.sort(key=lambda x: x[2], reverse=True)
+        
+        for proposal_id, total_cp, effective_conviction in leaderboard_data:
+            # Mark if it's the agent's own proposal
+            marker = " (you)" if proposal_id == self_proposal_id else ""
+            context_lines.append(f"| {proposal_id:<11}{marker:<6} | {total_cp:<16} | {effective_conviction:<27.1f} |")
+    
+    context_lines.extend([
+        "",
+        "---"
+    ])
+    
     return "\n".join(context_lines)

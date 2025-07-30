@@ -302,6 +302,7 @@ def main():
                 ),
                 finalize_phase_ticks=config["consensus"]["finalize_phase_ticks"],
                 llm_config={} if args.nollm else config.get("llm", {}),
+                debug_config=config.get("debug", {}),
             )
 
             primer = Primer(global_config)

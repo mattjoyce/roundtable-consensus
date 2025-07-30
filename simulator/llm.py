@@ -36,6 +36,33 @@ class ReviseDecision(BaseModel):
     reasoning: str
 
 
+class PreferenceItem(BaseModel):
+    """Individual preference item for a proposal."""
+    
+    proposal_id: int
+    preference_score: float  # 0.0 to 1.0
+    rank: int  # 1=most preferred
+    reasoning: str
+
+
+class PreferenceRanking(BaseModel):
+    """Structured response model for stake phase proposal preference ranking."""
+
+    preferences: list[PreferenceItem]  # List of preference items
+    self_proposal_id: int | None = None  # Agent's own proposal ID
+    strategy_summary: str  # Overall strategic approach for this phase
+
+
+class StakeAction(BaseModel):
+    """Structured response model for stake phase tactical actions."""
+
+    action: Literal["stake", "switch_stake", "unstake", "wait"]
+    proposal_id: int  # Target proposal for action
+    cp_amount: int  # Amount to stake/switch/unstake
+    source_proposal_id: int | None = None  # For switch actions only
+    reasoning: str  # Tactical reasoning for this specific action
+
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -66,8 +93,7 @@ def one_shot(
 
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": context},
-        {"role": "user", "content": prompt},
+        {"role": "user", "content": f"{context}\n\n{prompt}"},
     ]
 
     # Build options dict with seed and context window if provided
@@ -79,7 +105,7 @@ def one_shot(
 
     try:
         response = ollama.chat(model=model, messages=messages, options=options)
-        print(f"Response from model {model}: {response['message']['content']}")
+        #print(f"Response from model {model}: {response['message']['content']}")
         return response["message"]["content"]
     except Exception as exc:
         print(f"Error during one_shot: {exc}")
@@ -133,9 +159,7 @@ def one_shot_json(
             format=response_model.model_json_schema(),
             options=options,
         )
-        print(
-            f"Structured response from model {model}: {response['message']['content']}"
-        )
+        #print( f"Structured response from model {model}: {response['message']['content']}")
         return response_model.model_validate_json(response["message"]["content"])
     except Exception as exc:
         print(f"Error during one_shot_json: {exc}")

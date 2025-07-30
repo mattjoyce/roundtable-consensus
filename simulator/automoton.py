@@ -2,11 +2,13 @@
 
 from pathlib import Path
 
-from context_builder import enhance_context_for_call
+from context_builder import build_context_stake_preferences, build_context_stake_action, enhance_context_for_call
 from llm import (
     FeedbackDecision,
+    PreferenceRanking,
     ProposeDecision,
     ReviseDecision,
+    StakeAction,
     load_agent_system_prompt,
     load_prompt,
     one_shot,
@@ -28,6 +30,23 @@ TRAIT_DEFAULTS = {
     "self_interest": 0.5,
     "consistency": 0.5,
 }
+
+
+def get_debug_dir(config):
+    """Get debug directory path if debug is enabled, None otherwise."""
+    debug_config = getattr(config, 'debug_config', {})
+    debug_enabled = debug_config.get("enabled", False)
+    save_context = debug_config.get("save_context", False)
+    
+    # Debug logging to see what's happening
+    logger.debug(f"Debug config: {debug_config}, enabled: {debug_enabled}, save_context: {save_context}")
+
+    if debug_enabled:
+        debug_dir = Path(debug_config.get("output_dir", "debug"))
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        return debug_dir 
+    
+    return None
 
 
 def extract_traits(profile: dict) -> dict:
@@ -122,6 +141,7 @@ def weighted_trait_decision(traits, weights, rng, activation: str = "linear"):
 def handle_signal(agent: AgentActor, payload: dict):
     """Route phase signals to appropriate handlers based on LLM configuration."""
     # Update agent's latest_proposal_id from system state via payload
+
     agent_proposal_id = payload.get("agent_proposal_id")
     if agent_proposal_id is not None:
         agent.latest_proposal_id = agent_proposal_id
@@ -150,7 +170,12 @@ def handle_signal(agent: AgentActor, payload: dict):
         else:
             return handle_revise(agent, payload)
     elif phase_type == "Stake":
-        return handle_stake(agent, payload)
+        # Check if LLM mode is enabled for stake decisions
+        use_llm_stake = payload["config"].llm_config.get("stake", False)
+        if use_llm_stake:
+            return handle_stake_llm(agent, payload)
+        else:
+            return handle_stake(agent, payload)
 
     logger.debug(f"{agent.agent_id} received unhandled phase signal: {phase_type}")
     return {"ack": True}
@@ -1763,7 +1788,7 @@ def handle_stake(agent: AgentActor, payload: dict):
             )
 
     # Decision 3: Calculate stake amount (trait-based with balance knowledge)
-    current_balance = payload.get("current_balance", 0)
+    current_balance = payload.get("current_balance", 150)
 
     # Pure trait-driven stake percentage
     base_percentage = risk_tolerance * 0.6
@@ -1807,4 +1832,284 @@ def handle_stake(agent: AgentActor, payload: dict):
         f"[STAKE] {agent.agent_id} → STAKING {stake_amount} CP | Round {round_number} | Balance: {current_balance} CP | Target: {target_proposal_id} ({proposal_choice_reason}) | Stake %: {stake_percentage:.2f}"
     )
 
+    return {"ack": True}
+
+
+def handle_stake_llm(agent: AgentActor, payload: dict):
+    """Handle STAKE phase using LLM decision making with two-prompt system."""
+    state = payload.get("state")
+    config = payload.get("config")
+    phase = payload.get("phase")
+    current_balance = payload.get("current_balance")
+    
+    issue_id = config.issue_id
+    tick = state.tick
+    phase_tick = state.phase_tick
+    round_number = payload.get("round_number", 1)
+    
+    
+    # Get or initialize stake memory
+    memory = get_phase_memory(agent, "stake")
+    
+    # Extract traits for context
+    profile = agent.metadata.get("protocol_profile", {})
+    traits = extract_traits(profile)
+    
+    # Set up debug directory for both phases from config
+    debug_dir = get_debug_dir(config)
+    
+    try:
+        # Phase 1: Get proposal preferences (once per stake phase)
+        preferences_key = f"round_{round_number}_preferences"
+        if preferences_key not in memory:
+            logger.info(f"[STAKE-LLM] {agent.agent_id} getting proposal preferences for round {round_number}")
+            
+            # Build context for preference ranking
+            context_payload = {
+                "type": payload["type"],
+                "state": payload["state"],
+                "config": payload["config"],
+                "tick": tick,
+                "phase_tick": phase_tick,
+                "issue_id": issue_id,
+                "max_phase_ticks": payload["phase"].max_phase_ticks,
+                "current_balance": current_balance,
+            }
+
+            preference_context = enhance_context_for_call(
+                agent, context_payload, "stake_preferences"
+            )
+            
+            system_prompt = load_agent_system_prompt()
+            user_prompt = load_prompt("stake_preferences")
+            model = config.llm_config.get("model", None)
+            
+            # Use agent's RNG seed for deterministic generation
+            seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
+            
+            # Dump context for debugging (if enabled)
+            debug_dir=Path("debug")
+            filename = f"context_{agent.agent_id}_{tick}_{phase_tick}_stake_prefs.txt"
+            path = debug_dir / filename
+            print(path)
+            path.write_text(preference_context, encoding="utf-8")
+            
+            # Get preference ranking from LLM
+            context_window = config.llm_config.get("context_window")
+            preferences = one_shot_json(
+                system=system_prompt,
+                context=preference_context,
+                prompt=user_prompt,
+                response_model=PreferenceRanking,
+                model=model,
+                seed=seed,
+                context_window=context_window,
+            )
+            
+            # Store preferences in memory
+            memory[preferences_key] = {
+                "preferences": [p.model_dump() for p in preferences.preferences],
+                "self_proposal_id": preferences.self_proposal_id,
+                "strategy_summary": preferences.strategy_summary,
+            }
+            
+            # Extract top 3 preferred proposal IDs for logging
+            sorted_prefs = sorted(preferences.preferences, key=lambda x: x.rank)
+            top_3_ids = [p.proposal_id for p in sorted_prefs[:3]]
+            
+            logger.info(
+                f"[STAKE-LLM] {agent.agent_id} established preferences: {top_3_ids}... | Strategy: {preferences.strategy_summary[:50]}..."
+            )
+        
+        # Phase 2: Get tactical stake action based on preferences + current state
+        # This runs every time, using cached preferences from Phase 1
+        stored_preferences = memory.get(preferences_key)
+        if not stored_preferences:
+            logger.error(f"[STAKE-LLM] {agent.agent_id} no preferences found for round {round_number}")
+            signal_ready_action(agent.agent_id, issue_id)
+            return {"ack": True}
+        
+        # Build enhanced context with current state and preferences
+        context_payload = {
+            "type": payload["type"],
+            "state": payload["state"],
+            "config": payload["config"],
+            "tick": tick,
+            "phase_tick": phase_tick,
+            "issue_id": issue_id,
+            "max_phase_ticks": payload["phase"].max_phase_ticks,
+            "current_balance": payload.get("current_balance"),
+            "atomic_stakes": payload.get("atomic_stakes", []),
+            "stored_preferences": stored_preferences,
+        }
+        action_context = enhance_context_for_call(
+            agent, context_payload, "stake_action"
+        )
+        
+        # Dump action context for debugging (if enabled)
+        debug_dir = Path("debug")
+        filename = f"context_{agent.agent_id}_{tick}_{phase_tick}_stake_action.txt"
+        path = debug_dir / filename
+        path.write_text(action_context, encoding="utf-8")
+        
+        # Get stake action decision from LLM
+        system_prompt = load_agent_system_prompt()
+        user_prompt = load_prompt("stake_action")
+        model = config.llm_config.get("model", None)
+        
+        # Use agent's RNG seed for deterministic generation
+        seed = agent.seed if hasattr(agent, "seed") else hash(agent.agent_id) % 2**31
+        context_window = config.llm_config.get("context_window")
+        
+        action_decision = one_shot_json(
+            system=system_prompt,
+            context=action_context,
+            prompt=user_prompt,
+            response_model=StakeAction,
+            model=model,
+            seed=seed + tick,  # Vary seed by tick for different decisions
+            context_window=context_window,
+        )
+        
+        logger.debug(
+            f"[LLM_DECISION] {agent.agent_id} LLM decided: {action_decision.action} on P{action_decision.proposal_id} with {action_decision.cp_amount} CP | Reasoning: {action_decision.reasoning[:100]}..."
+        )
+        
+        # Execute the LLM's decision
+        if action_decision.action == "stake":
+            # Validate amount doesn't exceed balance
+            stake_amount = min(action_decision.cp_amount, current_balance)
+            if stake_amount > 0:
+                ACTION_QUEUE.submit(
+                    Action(
+                        type="stake",
+                        agent_id=agent.agent_id,
+                        payload={
+                            "proposal_id": action_decision.proposal_id,
+                            "stake_amount": stake_amount,
+                            "round_number": round_number,
+                            "tick": tick,
+                            "issue_id": issue_id,
+                            "choice_reason": "llm_decision",
+                        },
+                    )
+                )
+                
+                add_memory_action(
+                    agent,
+                    "stake",
+                    tick,
+                    f"LLM staked {stake_amount} CP on proposal {action_decision.proposal_id}: {action_decision.reasoning[:50]}...",
+                    {
+                        "action": "stake",
+                        "proposal_id": action_decision.proposal_id,
+                        "amount": stake_amount,
+                        "llm_reasoning": action_decision.reasoning,
+                    },
+                )
+                
+                logger.info(
+                    f"[STAKE-LLM] {agent.agent_id} LLM staked {stake_amount} CP on P{action_decision.proposal_id} | Round {round_number}"
+                )
+        
+        elif action_decision.action == "switch_stake":
+            # Validate switch parameters
+            if action_decision.source_proposal_id is not None:
+                switch_amount = min(action_decision.cp_amount, current_balance)
+                if switch_amount > 0:
+                    ACTION_QUEUE.submit(
+                        Action(
+                            type="switch_stake",
+                            agent_id=agent.agent_id,
+                            payload={
+                                "source_proposal_id": action_decision.source_proposal_id,
+                                "target_proposal_id": action_decision.proposal_id,
+                                "cp_amount": switch_amount,
+                                "tick": tick,
+                                "issue_id": issue_id,
+                                "reason": "llm_decision",
+                            },
+                        )
+                    )
+                    
+                    add_memory_action(
+                        agent,
+                        "stake",
+                        tick,
+                        f"LLM switched {switch_amount} CP from P{action_decision.source_proposal_id} to P{action_decision.proposal_id}: {action_decision.reasoning[:50]}...",
+                        {
+                            "action": "switch_stake",
+                            "source_proposal_id": action_decision.source_proposal_id,
+                            "target_proposal_id": action_decision.proposal_id,
+                            "amount": switch_amount,
+                            "llm_reasoning": action_decision.reasoning,
+                        },
+                    )
+                    
+                    logger.info(
+                        f"[STAKE-LLM] {agent.agent_id} LLM switched {switch_amount} CP from P{action_decision.source_proposal_id} to P{action_decision.proposal_id} | Round {round_number}"
+                    )
+        
+        elif action_decision.action == "unstake":
+            unstake_amount = min(action_decision.cp_amount, current_balance)
+            if unstake_amount > 0:
+                ACTION_QUEUE.submit(
+                    Action(
+                        type="unstake",
+                        agent_id=agent.agent_id,
+                        payload={
+                            "proposal_id": action_decision.proposal_id,
+                            "cp_amount": unstake_amount,
+                            "tick": tick,
+                            "issue_id": issue_id,
+                            "reason": "llm_decision",
+                        },
+                    )
+                )
+                
+                add_memory_action(
+                    agent,
+                    "stake",
+                    tick,
+                    f"LLM unstaked {unstake_amount} CP from proposal {action_decision.proposal_id}: {action_decision.reasoning[:50]}...",
+                    {
+                        "action": "unstake",
+                        "proposal_id": action_decision.proposal_id,
+                        "amount": unstake_amount,
+                        "llm_reasoning": action_decision.reasoning,
+                    },
+                )
+                
+                logger.info(
+                    f"[STAKE-LLM] {agent.agent_id} LLM unstaked {unstake_amount} CP from P{action_decision.proposal_id} | Round {round_number}"
+                )
+        
+        elif action_decision.action == "wait":
+            add_memory_action(
+                agent,
+                "stake",
+                tick,
+                f"LLM decided to wait: {action_decision.reasoning[:50]}...",
+                {
+                    "action": "wait",
+                    "llm_reasoning": action_decision.reasoning,
+                },
+            )
+            logger.info(
+                f"[STAKE-LLM] {agent.agent_id} LLM decided to wait. (tick {tick})"
+            )
+    
+    except Exception as exc:
+        logger.error(
+            f"[STAKE-LLM] {agent.agent_id} LLM stake decision failed: {exc}. "
+            "Aborting stake phase. Please check LLM configuration, model availability, and input context."
+        )
+        raise RuntimeError(
+            f"LLM stake decision failed for agent {agent.agent_id}: {exc}. "
+            "Stake phase aborted. Check LLM setup and logs for details."
+        )
+    
+    # Always signal ready after processing
+    signal_ready_action(agent.agent_id, issue_id)
+    
     return {"ack": True}

@@ -92,6 +92,11 @@ class EventType(str, Enum):
     STATE_SNAPSHOT = "state_snapshot"
 
 
+    # Context Building
+    CONTEXT_BUILD = "context_build"
+    CONTEXT_BUILD_ERROR = "context_build_error"
+
+
 class PhaseType(str, Enum):
     """Phase types in consensus process"""
 

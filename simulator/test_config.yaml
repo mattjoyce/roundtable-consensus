@@ -46,6 +46,12 @@ llm:
   model : "phi3"
   context_window: 9999
 
+# Debug settings
+debug:
+  enabled: true
+  output_dir: "debug"
+  save_context: true
+
 issue:
   problem_statement: "Custom test problem statement."
   background: "Custom test background."
