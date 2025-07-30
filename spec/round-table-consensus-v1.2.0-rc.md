@@ -261,6 +261,8 @@ Optional: A system‑wide or per‑issue cap may limit the number of revisions (
   ```
   Weight = StakeAmount × ConvictionMultiplier(rounds_held)
   ```
+
+  Conviction multipliers apply per atomic stake. Moving or withdrawing a stake resets its `rounds_held` to zero. Agents cannot transfer conviction built on one proposal to another.
 * **16.7 Conviction Curve** – The multiplier follows a smooth exponential approach toward a configurable maximum:
 
   ```
@@ -270,9 +272,11 @@ Optional: A system‑wide or per‑issue cap may limit the number of revisions (
 
   where:
 
-  * `r` = `rounds_held` (consecutive rounds on the same proposal, capped at `ConvictionSaturationRounds`).
+  * `r` = `rounds_held` (consecutive rounds a particular stake remains on the same proposal, capped at `ConvictionSaturationRounds`).
   * `MaxConvictionMultiplier`, `ConvictionTargetFraction`, and `ConvictionSaturationRounds` are defined in **Section 5**.
   * This guarantees the multiplier reaches ≥ `ConvictionTargetFraction × MaxConvictionMultiplier` after `ConvictionSaturationRounds` (e.g., 1.96× when the max is 2.0× and target fraction is 0.98).
+
+  **Example:** If an agent unstakes from Proposal A after building conviction and stakes those CP on Proposal B, the multiplier resets to 1× for the new stake.
 
 ---
 
