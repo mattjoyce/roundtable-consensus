@@ -171,4 +171,81 @@ Always via RFC because they affect long‑term fairness; simulation results shou
 
 ---
 
+## 11  Staging a Spec Update (Release Candidate Workflow)
+
+For accepted RFCs that require a spec change, maintainers should stage edits in a dedicated release branch to preserve immutability of the current spec and ensure traceable versioning.
+
+### 🔧 Purpose
+
+* Accumulate multiple accepted RFCs before issuing a version bump
+* Allow granular commits (one per RFC) for auditability
+* Prevent premature changes to main or `/spec/` without consensus
+* Enable review and iteration before final release
+
+### 🪜 Steps
+
+1. **Create RC Branch**
+   ```bash
+   git checkout main
+   git checkout -b release/v1.3-rc1
+   ```
+
+2. **Copy Latest Spec**
+   ```bash
+   cp spec/round-table-consensus-v1.2.0.md spec/round-table-consensus-v1.3-rc1.md
+   ```
+
+3. **Apply Accepted RFCs**
+   For each RFC:
+   * Edit the draft spec (`v1.3-rc1.md`)
+   * Include the corresponding RFC file in `/rfcs/accepted/`
+   * Commit with clear message:
+   ```bash
+   git add spec/round-table-consensus-v1.3-rc1.md rfcs/accepted/RFC-005.6-Revision-Distance-Gaming-Prevention.md
+   git commit -m "Apply RFC-005.6: Revision Distance Gaming Prevention"
+   ```
+
+4. **Push and Review**
+   Open a PR from `release/v1.3-rc1` to `main` for collective review:
+   ```bash
+   git push origin release/v1.3-rc1
+   ```
+
+5. **Finalize Release**
+   Once all changes are accepted:
+   * Rename file:
+   ```bash
+   git mv spec/round-table-consensus-v1.3-rc1.md spec/round-table-consensus-v1.3.0.md
+   ```
+   * Tag release:
+   ```bash
+   git tag v1.3.0
+   ```
+   * Merge to Main
+     Finalize the PR and merge into main. This makes the version official.
+
+### 📁 Directory Snapshot (Example)
+
+```
+/spec/
+  round-table-consensus-v1.2.0.md
+  round-table-consensus-v1.3-rc1.md   # staging
+  round-table-consensus-v1.3.0.md     # finalized
+
+/rfcs/accepted/
+  RFC-005.6-Revision-Distance-Gaming-Prevention.md
+  ...
+```
+
+### 📝 Notes
+
+* **One RFC = One Commit**: Ensures traceability from GitHub issue to spec diff.
+* **RC Name Format**: Use `vX.Y-rcZ` for clarity (`rc1`, `rc2`, etc.).
+* **RC File Is Temporary**: Only keep `vX.Y.Z.md` in main after release.
+
+> [!TIP]
+> For long-running changes, push the RC branch regularly so others can track progress or contribute.
+
+---
+
 > *This process keeps Round Table Consensus evolving quickly without sacrificing determinism or auditability.*
