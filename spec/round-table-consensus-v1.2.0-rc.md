@@ -25,7 +25,7 @@ This protocol defines a deterministic, multi-phase decision process where each p
 
 The design is intentionally transparent and simulation-friendly. Every consensus cycle can be replayed or audited from an immutable ledger of state transitions. The system accommodates both asynchronous and turn-based execution, and is suitable for integration with agent-based infrastructure, including autonomous agents and protocol-governed collectives.
 
-This specification serves as the authoritative reference for all implementations. While initial versions assume a trusted execution environment and non-adversarial actors, the protocol's structure lays the groundwork for future enhancements, including adversarial resilience, reputation systems, and off-chain hooks.
+This specification serves as the authoritative reference for all implementations. The protocol is under active development with some mechanics in experimental phases. While initial versions assume a trusted execution environment and non-adversarial actors, the protocol's structure lays the groundwork for future enhancements, including adversarial resilience, reputation systems, and off-chain hooks.
 
 By combining democratic ideals with formal mechanism design, the Round Table Consensus Protocol aspires to create a new standard for collective reasoning in hybrid teams of humans and machines.
 
@@ -37,7 +37,7 @@ This section explains the reasoning behind key architectural and philosophical c
 
 Conviction Points (CP) are not currency, votes, or influence tokens. They constitute a scarce preference budget that participants use to express what they care about most. Backing a proposal, providing feedback, or revising content requires CP expenditure, revealing relative importance through resource allocation.
 
-### 2.2 Burn as Preference Revelation
+### 2.2 Burn as Preference Revelation *(Experimental)*
 
 While "burn" has blockchain connotations, in this protocol it functions as preference revelation—a non-refundable commitment demonstrating sincerity. It is not punitive but expressive, creating authentic signals of participant priorities.
 
@@ -45,7 +45,7 @@ While "burn" has blockchain connotations, in this protocol it functions as prefe
 
 Feedback incurs CP cost to discourage low-effort or spam responses. This creates a soft gate ensuring participants weigh the value of their contributions before investing CP, promoting meaningful engagement over noise.
 
-### 2.4 Atomic Stakes and Conviction Building
+### 2.4 Atomic Stakes and Conviction Building *(Experimental)*
 
 Each stake operates as an atomic transaction with its own conviction accumulation curve. This allows agents to dynamically adjust positions while rewarding sustained commitment to specific proposals through conviction multipliers that build over time.
 
