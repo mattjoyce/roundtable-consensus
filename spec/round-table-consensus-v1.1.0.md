@@ -25,35 +25,69 @@ This protocol defines a deterministic, multi-phase decision process where each p
 
 The design is intentionally transparent and simulation-friendly. Every consensus cycle can be replayed or audited from an immutable ledger of state transitions. The system accommodates both asynchronous and turn-based execution, and is suitable for integration with agent-based infrastructure, including autonomous agents and protocol-governed collectives.
 
-This specification serves as the authoritative reference for all implementations. While initial versions assume a trusted execution environment and non-adversarial actors, the protocol's structure lays the groundwork for future enhancements, including adversarial resilience, reputation systems, and off-chain hooks.
+This specification serves as the authoritative reference for all implementations. The protocol is under active development with some mechanics in experimental phases. While initial versions assume a trusted execution environment and non-adversarial actors, the protocol's structure lays the groundwork for future enhancements, including adversarial resilience, reputation systems, and off-chain hooks.
 
 By combining democratic ideals with formal mechanism design, the Round Table Consensus Protocol aspires to create a new standard for collective reasoning in hybrid teams of humans and machines.
 
+## 2. Design Rationale
 
-## 1. Identity & Invitation
+This section explains the reasoning behind key architectural and philosophical choices in the protocol.
 
-* **1.1 Agents are invited to the System by an administrator.**
-* **1.2 Each invited agent receives a unique credential (API key or similar) that must be presented with every action, binding those actions to that agent's identity.**
+### 2.1 Conviction Points as Preference Budget
+
+Conviction Points (CP) are not currency, votes, or influence tokens. They constitute a scarce preference budget that participants use to express what they care about most. Backing a proposal, providing feedback, or revising content requires CP expenditure, revealing relative importance through resource allocation.
+
+### 2.2 Burn as Preference Revelation *(Experimental)*
+
+While "burn" has blockchain connotations, in this protocol it functions as preference revelation—a non-refundable commitment demonstrating sincerity. It is not punitive but expressive, creating authentic signals of participant priorities.
+
+### 2.3 Feedback Costs as Quality Gates
+
+Feedback incurs CP cost to discourage low-effort or spam responses. This creates a soft gate ensuring participants weigh the value of their contributions before investing CP, promoting meaningful engagement over noise.
+
+### 2.4 Atomic Stakes and Conviction Building *(Experimental)*
+
+Each stake operates as an atomic transaction with its own conviction accumulation curve. This allows agents to dynamically adjust positions while rewarding sustained commitment to specific proposals through conviction multipliers that build over time.
+
+### 2.5 Controller as Deterministic Orchestrator
+
+The controller is not a central authority or adjudicator but a deterministic orchestrator that advances ticks, validates phases, and records outcomes. This role could be automated or even governed by another RTCP process in future versions.
 
 ---
 
-## 2. Deterministic State Machine
+## 3. Identity & Invitation
 
-* **2.1 The system operates as a deterministic state machine.**
-* **2.2 At each `tick` the protocol rules are applied to the current ledger to derive the next state.**
-* **2.3 Ticks are *logical events*, not tied to wall‑clock time.**
-* **2.4 The algorithm is designed to minimise or eliminate the need for a human moderator; all transitions are fully specified by the protocol.**
+* **3.1 Agents are invited to the System by an administrator.**
+* **3.2 Each invited agent receives a unique credential (API key or similar) that must be presented with every action, binding those actions to that agent's identity.**
 
 ---
 
-## 3. Issue Lifecycle & Schema
+## 4. Design Assumptions
 
-* **3.1 Issues are created externally.** Agents themselves cannot originate new issues under Version 1 of the protocol.
-* **3.2 Each Issue *must* include the following mandatory fields:**
+* **4.1 The protocol operates in curated, non-democratic environments.** It is not a permissionless public consensus system.
+* **4.2 Agents participate by invitation and assignment only.** Each agent receives a credential and is enrolled/assigned by a controller.
+* **4.3 The controller functions as an orchestrator** and may be a human administrator or an automated system. Its role is to invite agents and coordinate state transitions.
+* **4.4 The base trust model assumes honest, bounded-rational agents** interacting in a trusted execution environment. Future versions may add adversarial resilience mechanisms.
+
+---
+
+## 5. Deterministic State Machine
+
+* **5.1 The system operates as a deterministic state machine.**
+* **5.2 At each `tick` the protocol rules are applied to the current ledger to derive the next state.**
+* **5.3 Ticks are *logical events*, not tied to wall‑clock time.**
+* **5.4 The algorithm is designed to minimise or eliminate the need for a human moderator; all transitions are fully specified by the protocol.**
+
+---
+
+## 6. Issue Lifecycle & Schema
+
+* **6.1 Issues are created externally.** Issues enter the system from outside the consensus process. The protocol does not define the authorization method or qualifications of an issue's author, allowing deployments to implement their own issue-creation policies.
+* **6.2 Each Issue *must* include the following mandatory fields:**
 
   * **Problem Statement** – a concise articulation of the decision to be made.
   * **Background Information** – relevant facts, domain data, or constraints.
-* **3.3 An Issue *may* optionally include additional context such as:**
+* **6.3 An Issue *may* optionally include additional context such as:**
 
   * **Indicators / Metrics** – measurable criteria for evaluating success.
   * **Goals & Policies** – references to system‑level objectives and policy documents that proposals should respect.
@@ -61,16 +95,16 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 
 ---
 
-## 4. Conviction Points
+## 7. Conviction Points
 
-* **4.1 Upon invitation, each agent is automatically credited with `StandardInvitePayment` Conviction Points (default = 100).**
-* **4.2 Conviction Points constitute the transferable stake agents spend on proposals, feedback, and voting.**
-* **4.3 The total Conviction Points in circulation equals the sum of all initial allocations minus any burns (e.g., penalties).**
-* **4.4 An agent's Conviction Point balance may never exceed `MaximumCredit()`.** This constraint is evaluated immediately after any action that grants additional points.
+* **7.1 Upon invitation, each agent is automatically credited with `StandardInvitePayment` Conviction Points (default = 100).**
+* **7.2 Conviction Points constitute the transferable stake agents spend on proposals, feedback, and voting.**
+* **7.3 The total Conviction Points in circulation equals the sum of all initial allocations minus any burns (e.g., penalties).**
+* **7.4 An agent's Conviction Point balance may never exceed `MaximumCredit()`.** This constraint is evaluated immediately after any action that grants additional points.
 
 ---
 
-## 5. Core Variables & Constants
+## 8. Core Variables & Constants
 
 | Variable                     | Type               | Default                 | Purpose                                                                                                                                                   |
 | ---------------------------- | ------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,8 +114,8 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 | `RevisionCost(Δ)`            | Formula            | `ProposalSelfStake × Δ` | Dynamic cost for a proposal revision where Δ ∈ \[0,1] is the token‑level diff ratio between old and new drafts.                                           |
 | `MaxThinkTicks`              | Integer            | 3                       | Logical ticks allowed **per phase** for an agent to act or signal before kick‑out substitution occurs; the counter resets at the start of each new phase. |
 | `KickOutPenalty`             | Integer            | 0                       | Conviction Points burned when an agent is auto‑substituted for inactivity (0 = no penalty).                                                               |
-| `FeedbackStake`              | Integer            | 5                       | Conviction Points deducted from an agent each time they submit feedback on another proposal.                                                              |
-| `MaxFeedbackPerAgent`        | Integer            | 3                       | Maximum number of feedback entries an agent may submit per Issue.                                                                                         |
+| `FeedbackStake`              | Integer            | 5 (configurable)        | Conviction Points deducted from an agent each time they submit feedback on another proposal.                                                              |
+| `MaxFeedbackPerAgent`        | Integer            | 3 (configurable)        | Maximum number of feedback entries an agent may submit per Issue.                                                                                         |
 | `FeedbackCharLimit`          | Integer            | 500                     | Maximum character length of a single feedback comment.                                                                                                    |
 | `RevisionCycles`             | Integer            | 2                       | Number of (Feedback → Revise) loops the system executes before moving to the next consensus phase.                                                        |
 | `MaxConvictionMultiplier`    | Float              | 2.0                     | Maximum multiplier a stake can achieve through conviction building.                                                                                       |
@@ -90,11 +124,11 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 
 ---
 
-## 6. Proposal Submission & Self‑Stake
+## 9. Proposal Submission & Self‑Stake
 
-* **6.1 Each agent must submit exactly one proposal for an issue.** Agents who do not craft a unique proposal must select the canonical `No Action` proposal.
+* **9.1 Each agent must submit exactly one proposal for an issue.** Agents who do not craft a unique proposal must select the canonical `No Action` proposal.
 
-* **6.2 Upon proposal submission (including `No Action`), the system automatically places a self‑stake of `ProposalSelfStake` Conviction Points (default = 50) from the submitting agent onto that proposal.**
+* **9.2 Upon proposal submission (including `No Action`), the system automatically places a self‑stake of `ProposalSelfStake` Conviction Points (default = 50) from the submitting agent onto that proposal.**
 
 ### 🔒 Stake Accounting Rules (RFC‑002)
 
@@ -106,27 +140,27 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 
 ---
 
-## 7. Enrollment & Issue Assignment
+## 10. Enrollment & Issue Assignment
 
-* **7.1 Agents are considered *enrolled* in the System once they have accepted their invitation and authenticated using their credential.**
-* **7.2 An enrolled agent must be explicitly assigned to an Issue before they can participate in that Issue's consensus process.**
+* **10.1 Agents are considered *enrolled* in the System once they have accepted their invitation and authenticated using their credential.**
+* **10.2 An enrolled agent must be explicitly assigned to an Issue before they can participate in that Issue's consensus process.**
 
 ---
 
-## 8. Proposal Schema
+## 11. Proposal Schema
 
-* **8.1 Mandatory fields (every proposal must supply):**
+* **11.1 Mandatory fields (every proposal must supply):**
 
   * **Title** – short human‑readable label for the proposal.
   * **Proposed Action** – clear description of the decision or action the agent is advocating.
   * **Rationale** – explanation of how the Proposed Action addresses the Issue's Problem Statement and aligns with Background constraints.
-* **8.2 Optional fields (recommended but not enforced):**
+* **11.2 Optional fields (recommended but not enforced):**
 
   * **Impact Metrics** – expected effects on the Issue's Indicators / KPIs.
   * **Risk Assessment & Mitigations** – identified risks and how they will be reduced.
   * **Implementation Notes** – high‑level plan, resource needs, timelines.
   * **References & Attachments** – links or artefacts supporting the proposal.
-* **8.3 System‑generated fields (populated by the protocol, not the agent):**
+* **11.3 System‑generated fields (populated by the protocol, not the agent):**
 
   * **AuthorAgentID** – the credential of the submitting agent.
   * **ParentIssueID** – linkage to the Issue under deliberation.
@@ -136,16 +170,16 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 
 ---
 
-## 9. Phase Progression & Kick‑Out Timer
+## 12. Phase Progression & Kick‑Out Timer
 
-* **9.1 Turn‑Based Advancement** – Within each phase, the orchestrator advances from tick *N* to *N+1* once every assigned agent has submitted its required action **or** explicitly signalled READY for tick *N*, **or** when the laggard timer for any agent reaches `MaxThinkTicks`. The timer resets at the beginning of every new phase.
-* **9.2 Ready Signal** – In any phase where an agent has no mandatory payload to submit (e.g., they choose to give no feedback), the agent must call `signal_ready()` to confirm completion. This action is free and counts toward 9.1's completeness check.
-* **9.3 Kick‑Out Substitution** – If the timer fires, the inactive agent's move is replaced with the protocol's canonical default (e.g., `No Action` for proposals or `Abstain` for votes). The agent is optionally debited `KickOutPenalty` Conviction Points.
+* **12.1 Turn‑Based Advancement** – Within each phase, the orchestrator advances from tick *N* to *N+1* once every assigned agent has submitted its required action **or** explicitly signalled READY for tick *N*, **or** when the laggard timer for any agent reaches `MaxThinkTicks`. The timer resets at the beginning of every new phase.
+* **12.2 Ready Signal** – In any phase where an agent has no mandatory payload to submit (e.g., they choose to give no feedback), the agent must call `signal_ready()` to confirm completion. This action is free and counts toward 9.1's completeness check.
+* **12.3 Kick‑Out Substitution** – If the timer fires, the inactive agent's move is replaced with the protocol's canonical default (e.g., `No Action` for proposals or `Abstain` for votes). The agent is optionally debited `KickOutPenalty` Conviction Points.
 
 > 📎 *When `NoAction` is substituted for a non‑responsive agent, the system still deducts `ProposalSelfStake` CP from the agent's balance (RFC‑003). This ensures economic parity with active proposal submission. If the agent lacks sufficient CP, an `InsufficientCredit` event is logged.*
 
-* **9.4 External Tick Provider (Version 1)** – Version 1 relies on an external scheduler/orchestrator to emit ticks; agents themselves do not initiate ticks autonomously.
-* **9.5 Determinism** – All substitutions, penalties, and READY checks are deterministic functions of ledger state, removing human discretion.
+* **12.4 External Tick Provider (Version 1)** – Version 1 relies on an external scheduler/orchestrator to emit ticks; agents themselves do not initiate ticks autonomously.
+* **12.5 Determinism** – All substitutions, penalties, and READY checks are deterministic functions of ledger state, removing human discretion.
 
 ---
 
@@ -166,7 +200,7 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 ## 11. Feedback Phase
 
 * **11.1 Eligibility** – Any enrolled agent assigned to the Issue may submit written feedback on any proposal authored by another agent.
-* **11.2 Cost of Feedback** – Upon submission, the system deducts `FeedbackStake` Conviction Points (default = 5) from the feedback‑giving agent. These points are burned (removed from circulation) unless future rules re‑allocate them.
+* **11.2 Cost of Feedback** – Upon submission, the system deducts `FeedbackStake` Conviction Points (default = 5) from the feedback‑giving agent. These points are burned (removed from circulation) unless future rules re‑allocate them. These values may be tuned based on group size, problem complexity, or other deployment considerations.
 * **11.3 Feedback Record** – Each feedback item stores: `FromAgentID`, `TargetProposalID`, `CommentBody`, and `CreatedTick`.
 * **11.4 Credit Check** – A `FEEDBACK` entry is accepted only if the author's available balance is ≥ `FeedbackStake`. Otherwise, the action is rejected and an `InsufficientCredit` event is logged.
 * **11.5 Quantity Cap** – An agent may submit at most `MaxFeedbackPerAgent` feedback entries per Issue. Additional attempts are rejected with `FeedbackLimitReached`.
@@ -193,7 +227,7 @@ PROPOSE → ( FEEDBACK → REVISE ) × `RevisionCycles` → …
 
 ## 13. Ledger & Transparency
 
-* **13.1 Immutable Event Log** – Every state‑changing action (credit, debit, burn, stake transfer, proposal creation, feedback submission, etc.) is appended to an immutable event log with a deterministic sequence number.
+* **13.1 Immutable Event Log** – Every state‑changing action (credit, debit, burn, stake transfer, proposal creation, feedback submission, etc.) is appended to an immutable event log with a deterministic sequence number. Stake events are revealed to agents one tick after they occur to support blind staking mechanics.
 * **13.2 Burn Events** – Whenever Conviction Points are burned (e.g., via `FeedbackStake` or `KickOutPenalty`), a `Burn` event is recorded specifying: `AgentID`, `Amount`, `Reason`, `ParentIssueID`, and `Tick`.
 * **13.3 Auditability** – At any time, the entire Conviction Point supply can be reconciled by summing initial allocations minus all recorded burns, ensuring full supply transparency without the need for per‑Issue treasuries.
 
@@ -208,6 +242,8 @@ PROPOSE → ( FEEDBACK → REVISE ) × `RevisionCycles` → …
   ```
 
   Thus, a tiny edit (Δ = 0.1) costs 5 CP, a half rewrite (Δ = 0.5) costs 25 CP, and a full rewrite (Δ = 1.0) costs the full 50 CP.
+
+  > **Implementation Guidance (Non-normative):** The dissimilarity measure `Δ` must yield a value in the range [0,1] where 0 means identical content and 1 means completely different. Each deployment should document their chosen method. Common approaches include: token-level or sentence-level diff ratios, normalized Levenshtein distance, or embedding-based similarity measures. For structured content, consider weighting changes by component significance.
 
 * **14.2 Auto‑Stake‑Tap for Insufficient Credit** – If the agent's liquid balance is < `RevisionCost(Δ)` *but* they still have staked CP on their own proposal, the protocol automatically un‑stakes sufficient CP from that proposal to cover the deficit. If stake is still inadequate, the revision is rejected and an `InsufficientCredit` event is logged.
 
@@ -245,6 +281,12 @@ Optional: A system‑wide or per‑issue cap may limit the number of revisions (
 * **16.1.2 Silent Agent Behavior** – If an agent does not act or signal by the timeout, their stake is assumed to persist unchanged. No penalty is applied.
 * **16.1.3 Hooks for External Pulses** – The orchestrator may emit periodic tick signals to agent `CustomHooks` to support loopless AI agents or polling-based infrastructure.
 
+### Blind Staking
+
+* **16.2.1 Stake Visibility** – During each STAKE round, stake submissions are appended to the ledger but not visible to other agents until the round completes. At the beginning of the next tick, all stakes from the previous round are revealed.
+* **16.2.2 Historical Stakes** – Agents can inspect all stakes logged prior to the current round, including each atomic stake's amount, target proposal, and conviction multiplier. This allows strategic decisions based on cumulative distribution between rounds.
+* **16.2.3 Fairness Rationale** – Hiding in-round stakes removes first-mover disadvantage and discourages strategic last-second adjustments while preserving full transparency over time.
+
 ### STAKE ₁
 
 * **16.6 Per‑Stake Multiplier** – Every individual stake tracks the number of consecutive staking rounds it remains on the *same* proposal. Its effective voting weight each round is:
@@ -252,6 +294,8 @@ Optional: A system‑wide or per‑issue cap may limit the number of revisions (
   ```
   Weight = StakeAmount × ConvictionMultiplier(rounds_held)
   ```
+
+  Conviction multipliers apply per atomic stake. Moving or withdrawing a stake resets its `rounds_held` to zero. Agents cannot transfer conviction built on one proposal to another.
 * **16.7 Conviction Curve** – The multiplier follows a smooth exponential approach toward a configurable maximum:
 
   ```
@@ -261,9 +305,11 @@ Optional: A system‑wide or per‑issue cap may limit the number of revisions (
 
   where:
 
-  * `r` = `rounds_held` (consecutive rounds on the same proposal, capped at `ConvictionSaturationRounds`).
+  * `r` = `rounds_held` (consecutive rounds a particular stake remains on the same proposal, capped at `ConvictionSaturationRounds`).
   * `MaxConvictionMultiplier`, `ConvictionTargetFraction`, and `ConvictionSaturationRounds` are defined in **Section 5**.
   * This guarantees the multiplier reaches ≥ `ConvictionTargetFraction × MaxConvictionMultiplier` after `ConvictionSaturationRounds` (e.g., 1.96× when the max is 2.0× and target fraction is 0.98).
+
+  **Example:** If an agent unstakes from Proposal A after building conviction and stakes those CP on Proposal B, the multiplier resets to 1× for the new stake.
 
 ---
 

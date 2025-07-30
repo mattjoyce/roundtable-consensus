@@ -1,1 +1,1 @@
-round-table-consensus-v1.1.0.md
+round-table-consensus-v1.2.0.md
