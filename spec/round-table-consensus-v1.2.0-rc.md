@@ -218,6 +218,8 @@ PROPOSE → ( FEEDBACK → REVISE ) × `RevisionCycles` → …
 
   Thus, a tiny edit (Δ = 0.1) costs 5 CP, a half rewrite (Δ = 0.5) costs 25 CP, and a full rewrite (Δ = 1.0) costs the full 50 CP.
 
+  > **Implementation Guidance (Non-normative):** The dissimilarity measure `Δ` must yield a value in the range [0,1] where 0 means identical content and 1 means completely different. Each deployment should document their chosen method. Common approaches include: token-level or sentence-level diff ratios, normalized Levenshtein distance, or embedding-based similarity measures. For structured content, consider weighting changes by component significance.
+
 * **14.2 Auto‑Stake‑Tap for Insufficient Credit** – If the agent's liquid balance is < `RevisionCost(Δ)` *but* they still have staked CP on their own proposal, the protocol automatically un‑stakes sufficient CP from that proposal to cover the deficit. If stake is still inadequate, the revision is rejected and an `InsufficientCredit` event is logged.
 
 * **14.3 Ledger Entry** – Every revision produces a `Revision` event recording `AgentID`, `ProposalID`, `Δ`, `Cost`, `Tick`, and any auto‑stake withdrawal amount.
