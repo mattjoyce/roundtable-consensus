@@ -1,8 +1,8 @@
 ---
 title: Round Table Consensus Protocol
-version: 1.1.0
+version: 1.2.0
 status: Stable
-date: 2025-07-13
+date: 2025-07-30
 authors:
   - Matt Joyce
 acknowledgments:

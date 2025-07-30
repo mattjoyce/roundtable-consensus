@@ -213,16 +213,29 @@ For accepted RFCs that require a spec change, maintainers should stage edits in 
 
 5. **Finalize Release**
    Once all changes are accepted:
-   * Rename file:
+   * Rename file and update symlinks:
    ```bash
    git mv spec/round-table-consensus-v1.3-rc1.md spec/round-table-consensus-v1.3.0.md
+   rm spec/round-table-consensus-latest.md
+   ln -s round-table-consensus-v1.3.0.md spec/round-table-consensus-latest.md
    ```
-   * Tag release:
+   * Update version metadata in spec file (version: 1.3.0, date: YYYY-MM-DD)
+   * Update CHANGELOG.md with comprehensive release notes:
+     - Document all RFC integrations with issue references
+     - Organize by Added/Changed/Fixed following Keep a Changelog format
+     - Include commit hashes and technical details for audit trail
+   * Commit finalization changes:
+   ```bash
+   git add spec/ CHANGELOG.md
+   git commit -m "Finalize v1.3.0 Release"
+   ```
+   * Push and create PR for review
+   * After PR approval, merge to main and tag:
    ```bash
    git tag v1.3.0
    ```
-   * Merge to Main
-     Finalize the PR and merge into main. This makes the version official.
+
+   **Note:** Leave README.md updates for separate review to avoid merge conflicts.
 
 ### 📁 Directory Snapshot (Example)
 
