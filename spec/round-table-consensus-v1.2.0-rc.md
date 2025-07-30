@@ -57,7 +57,7 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 
 ## 3. Issue Lifecycle & Schema
 
-* **3.1 Issues are created externally.** Agents themselves cannot originate new issues under Version 1 of the protocol.
+* **3.1 Issues are created externally.** Issues enter the system from outside the consensus process. The protocol does not define the authorization method or qualifications of an issue's author, allowing deployments to implement their own issue-creation policies.
 * **3.2 Each Issue *must* include the following mandatory fields:**
 
   * **Problem Statement** – a concise articulation of the decision to be made.
