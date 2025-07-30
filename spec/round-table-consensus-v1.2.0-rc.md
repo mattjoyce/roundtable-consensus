@@ -89,8 +89,8 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 | `RevisionCost(Δ)`            | Formula            | `ProposalSelfStake × Δ` | Dynamic cost for a proposal revision where Δ ∈ \[0,1] is the token‑level diff ratio between old and new drafts.                                           |
 | `MaxThinkTicks`              | Integer            | 3                       | Logical ticks allowed **per phase** for an agent to act or signal before kick‑out substitution occurs; the counter resets at the start of each new phase. |
 | `KickOutPenalty`             | Integer            | 0                       | Conviction Points burned when an agent is auto‑substituted for inactivity (0 = no penalty).                                                               |
-| `FeedbackStake`              | Integer            | 5                       | Conviction Points deducted from an agent each time they submit feedback on another proposal.                                                              |
-| `MaxFeedbackPerAgent`        | Integer            | 3                       | Maximum number of feedback entries an agent may submit per Issue.                                                                                         |
+| `FeedbackStake`              | Integer            | 5 (configurable)        | Conviction Points deducted from an agent each time they submit feedback on another proposal.                                                              |
+| `MaxFeedbackPerAgent`        | Integer            | 3 (configurable)        | Maximum number of feedback entries an agent may submit per Issue.                                                                                         |
 | `FeedbackCharLimit`          | Integer            | 500                     | Maximum character length of a single feedback comment.                                                                                                    |
 | `RevisionCycles`             | Integer            | 2                       | Number of (Feedback → Revise) loops the system executes before moving to the next consensus phase.                                                        |
 | `MaxConvictionMultiplier`    | Float              | 2.0                     | Maximum multiplier a stake can achieve through conviction building.                                                                                       |
@@ -175,7 +175,7 @@ By combining democratic ideals with formal mechanism design, the Round Table Con
 ## 11. Feedback Phase
 
 * **11.1 Eligibility** – Any enrolled agent assigned to the Issue may submit written feedback on any proposal authored by another agent.
-* **11.2 Cost of Feedback** – Upon submission, the system deducts `FeedbackStake` Conviction Points (default = 5) from the feedback‑giving agent. These points are burned (removed from circulation) unless future rules re‑allocate them.
+* **11.2 Cost of Feedback** – Upon submission, the system deducts `FeedbackStake` Conviction Points (default = 5) from the feedback‑giving agent. These points are burned (removed from circulation) unless future rules re‑allocate them. These values may be tuned based on group size, problem complexity, or other deployment considerations.
 * **11.3 Feedback Record** – Each feedback item stores: `FromAgentID`, `TargetProposalID`, `CommentBody`, and `CreatedTick`.
 * **11.4 Credit Check** – A `FEEDBACK` entry is accepted only if the author's available balance is ≥ `FeedbackStake`. Otherwise, the action is rejected and an `InsufficientCredit` event is logged.
 * **11.5 Quantity Cap** – An agent may submit at most `MaxFeedbackPerAgent` feedback entries per Issue. Additional attempts are rejected with `FeedbackLimitReached`.
