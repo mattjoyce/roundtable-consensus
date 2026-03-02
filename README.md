@@ -128,3 +128,5 @@ This protocol is the product of many conversations, critiques, and refinements. 
 
 If you’re reading this: welcome to the table. You are now part of the experiment.
 
+## Changelog
+See [CHANGELOG.md](CHANGELOG.md).
