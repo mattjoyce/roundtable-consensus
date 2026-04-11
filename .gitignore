@@ -2,6 +2,14 @@
 /private/
 CLAUDE.md
 **/CLAUDE.md
+/sprints/
+*:Zone.Identifier
+simulator/*.db
+simulator/debug/
+simulator/issue*.md
+simulator/issue*.sh
+simulator/output.md
+simulator/test_config_minimal.yaml
 
 
 
