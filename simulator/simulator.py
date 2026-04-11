@@ -3,7 +3,11 @@
 import random
 import argparse
 import time
+from pathlib import Path
 from typing import List
+
+import yaml
+
 from models import (
     GlobalConfig,
     AgentActor,
@@ -23,7 +27,7 @@ from simlog import (
     PhaseType,
     LogLevel,
 )
-from llm import one_shot, load_prompt
+from llm_provider import one_shot, load_prompt, DEFAULT_MODEL
 from proposal_debug import generate_proposal_debug_files
 
 
@@ -99,7 +103,7 @@ def parse_arguments():
     parser.add_argument(
         "--model",
         type=str,
-        help="Disable LLM usage and force RNG-based decisions for faster testing",
+        help="LLM model name as registered in llm (e.g. 'gpt-4o', 'anthropic/claude-sonnet-4-6', 'gemma3n:e4b')",
     )
 
     parser.add_argument(
@@ -133,7 +137,7 @@ def load_issue_from_file(file_path: str) -> str:
         raise
 
 
-def generate_issue_content(seed: int, model: str = "gemma3n:e4b") -> str:
+def generate_issue_content(seed: int, model: str = DEFAULT_MODEL) -> str:
     """
     Generate a realistic IT problem statement using LLM.
 
@@ -157,11 +161,11 @@ def main():
     args = parse_arguments()
 
     # Load configuration with CLI argument precedence
-    print(f"DEBUG: Loading config from: {args.config}")
     config = get_config_with_args(args.config, args)
-    print(f"DEBUG: num_agents in loaded config: {config['simulation']['num_agents']}")
-    print(
-        f"DEBUG: stake_phase_ticks in loaded config: {config['consensus']['stake_phase_ticks']}"
+    logger.debug(f"Loading config from: {args.config}")
+    logger.debug(f"num_agents in loaded config: {config['simulation']['num_agents']}")
+    logger.debug(
+        f"stake_phase_ticks in loaded config: {config['consensus']['stake_phase_ticks']}"
     )
 
     # Generate or use provided simulation ID
@@ -172,6 +176,12 @@ def main():
     sim_logger = setup_logging(sim_id, effective_verbosity)
 
     try:
+        # Create session output folder and snapshot config
+        session_dir = Path(__file__).parent / "sessions" / sim_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        with open(session_dir / "config.yaml", "w") as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
         # Extract configuration values
         pool_seed = config["simulation"]["pool_seed"]
         run_seed = config["simulation"]["run_seed"]

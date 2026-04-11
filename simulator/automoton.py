@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from context_builder import build_context_stake_preferences, build_context_stake_action, enhance_context_for_call
-from llm import (
+from llm_provider import (
     FeedbackDecision,
     PreferenceRanking,
     ProposeDecision,

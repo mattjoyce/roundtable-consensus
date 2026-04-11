@@ -1,14 +1,23 @@
-"""LLM integration and structured response handling for consensus simulation."""
+"""LLM integration and structured response handling for consensus simulation.
+
+Uses Simon Willison's llm package (https://llm.datasette.io/) as the backend,
+providing access to any registered model (OpenAI, Anthropic, Ollama, etc.)
+through a unified interface.
+"""
 
 import json
+from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Literal, Type, TypeVar
+from typing import Dict, Literal, Tuple, Type, TypeVar
 
-import ollama
+import llm as llm_lib
 from pydantic import BaseModel
 
 # Cache for loaded prompts to avoid repeated file I/O
 _prompt_cache: Dict[str, str] = {}
+
+# Default model - matches the previously hardcoded Ollama model
+DEFAULT_MODEL = "gemma3n:e4b"
 
 
 # Pydantic models for structured LLM responses
@@ -38,7 +47,7 @@ class ReviseDecision(BaseModel):
 
 class PreferenceItem(BaseModel):
     """Individual preference item for a proposal."""
-    
+
     proposal_id: int
     preference_score: float  # 0.0 to 1.0
     rank: int  # 1=most preferred
@@ -66,47 +75,70 @@ class StakeAction(BaseModel):
 T = TypeVar("T", bound=BaseModel)
 
 
+@lru_cache(maxsize=16)
+def _get_model(model: str | None = None) -> llm_lib.Model:
+    """Get a cached llm model instance by name."""
+    return llm_lib.get_model(model or DEFAULT_MODEL)
+
+
+def _prepare(
+    system: str,
+    context: str,
+    prompt: str,
+    model: str | None,
+    seed: int | None,
+    context_window: int | None,
+) -> Tuple[llm_lib.Model, str, dict]:
+    """Shared setup for one_shot and one_shot_json.
+
+    Returns:
+        (model_instance, user_content, options_kwargs)
+    """
+    m = _get_model(model)
+
+    # Build provider-specific options (only what the model supports)
+    options = {}
+    supported = set()
+    if hasattr(m, "Options") and hasattr(m.Options, "model_fields"):
+        supported = set(m.Options.model_fields.keys())
+    if seed is not None and "seed" in supported:
+        options["seed"] = seed
+    if context_window is not None and "num_ctx" in supported:
+        options["num_ctx"] = context_window
+
+    user_content = f"{context}\n\n{prompt}" if context else prompt
+    return m, user_content, options
+
+
 def one_shot(
     system: str,
     context: str,
     prompt: str,
-    model: str = "gemma3n:e4b",
+    model: str = None,
     seed: int = None,
     context_window: int = None,
 ) -> str:
     """
-    Generates structured prose using a local Ollama model.
-    Combines a system directive, contextual setup, and user prompt.
+    Generates structured prose using an LLM model via the llm package.
 
     Args:
         system: System message/directive for the model
         context: Contextual information for the generation
         prompt: User prompt/request
-        model: Ollama model name to use
-        seed: Random seed for deterministic generation (optional)
-        context_window: Context window size for the model (optional)
+        model: Model name as registered in llm (default: gemma3n:e4b)
+        seed: Random seed for deterministic generation (optional, provider-dependent)
+        context_window: Context window size (optional, Ollama-only)
     """
-
-    # print(f"system: {system}")
-    # print(f"context: {context}")
-    # print(f"prompt: {prompt}")
-
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"{context}\n\n{prompt}"},
-    ]
-
-    # Build options dict with seed and context window if provided
-    options = {}
-    if seed is not None:
-        options["seed"] = seed
-    if context_window is not None:
-        options["num_ctx"] = context_window
+    m, user_content, options = _prepare(system, context, prompt, model, seed, context_window)
 
     try:
-        response = ollama.chat(model=model, messages=messages, options=options)
-        #print(f"Response from model {model}: {response['message']['content']}")
-        return response["message"]["content"]
+        response = m.prompt(
+            user_content,
+            system=system or None,
+            stream=False,
+            **options,
+        )
+        return response.text()
     except Exception as exc:
         print(f"Error during one_shot: {exc}")
         return ""
@@ -117,21 +149,21 @@ def one_shot_json(
     context: str,
     prompt: str,
     response_model: Type[T],
-    model: str = "gemma3n:e4b",
+    model: str = None,
     seed: int = None,
     context_window: int = None,
 ) -> T:
     """
-    Generates structured JSON response using a local Ollama model with Pydantic validation.
+    Generates structured JSON response using an LLM model with Pydantic validation.
 
     Args:
         system: System message/directive for the model
         context: Contextual information for the generation
         prompt: User prompt/request
         response_model: Pydantic model class for structured response
-        model: Ollama model name to use
-        seed: Random seed for deterministic generation (optional)
-        context_window: Context window size for the model (optional)
+        model: Model name as registered in llm (default: gemma3n:e4b)
+        seed: Random seed for deterministic generation (optional, provider-dependent)
+        context_window: Context window size (optional, Ollama-only)
 
     Returns:
         Validated Pydantic model instance
@@ -139,28 +171,32 @@ def one_shot_json(
     Raises:
         Exception: If LLM call fails or response validation fails
     """
-
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"{context}\n\n{prompt}"},
-    ]
-
-    # Build options dict with seed and context window if provided
-    options = {}
-    if seed is not None:
-        options["seed"] = seed
-    if context_window is not None:
-        options["num_ctx"] = context_window
+    m, user_content, options = _prepare(system, context, prompt, model, seed, context_window)
 
     try:
-        response = ollama.chat(
-            model=model,
-            messages=messages,
-            format=response_model.model_json_schema(),
-            options=options,
-        )
-        #print( f"Structured response from model {model}: {response['message']['content']}")
-        return response_model.model_validate_json(response["message"]["content"])
+        if m.supports_schema:
+            response = m.prompt(
+                user_content,
+                system=system or None,
+                schema=response_model,
+                stream=False,
+                **options,
+            )
+            return response_model.model_validate_json(response.text())
+        else:
+            # Fallback: ask for JSON in the prompt and parse manually
+            json_prompt = (
+                f"{user_content}\n\n"
+                f"Respond with ONLY valid JSON matching this schema:\n"
+                f"{json.dumps(response_model.model_json_schema(), indent=2)}"
+            )
+            response = m.prompt(
+                json_prompt,
+                system=system or None,
+                stream=False,
+                **options,
+            )
+            return response_model.model_validate_json(response.text())
     except Exception as exc:
         print(f"Error during one_shot_json: {exc}")
         raise
@@ -201,8 +237,6 @@ def load_prompt(prompt_name: str) -> str:
 def load_agent_system_prompt() -> str:
     """
     Load the generic agent system prompt.
-
-    Traits and context are now provided via JSON context instead of injection.
 
     Returns:
         Generic system prompt for all agents

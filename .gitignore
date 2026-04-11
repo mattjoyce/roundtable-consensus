@@ -10,6 +10,7 @@ simulator/issue*.md
 simulator/issue*.sh
 simulator/output.md
 simulator/test_config_minimal.yaml
+simulator/sessions/
 
 
 
