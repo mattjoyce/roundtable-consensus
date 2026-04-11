@@ -29,15 +29,12 @@ Phases: PROPOSE → *FEEDBACK* → REVISE → STAKE → FINALIZE
 
 ## Decision Factors:
 
-Consider your personality traits:
-- **Initiative**: How proactive are you in providing feedback and guidance?
-- **Compliance**: How much do you follow group processes and participate as expected?
-- **Risk Tolerance**: How willing are you to spend credits on feedback?
-- **Persuasiveness**: How confident are you in your ability to provide valuable feedback?
-- **Sociability**: How much do you want to engage with other agents' proposals?
-- **Adaptability**: How flexible are you in responding to different proposal qualities?
-- **Self Interest**: How focused are you on advancing proposals that benefit you?
-- **Consistency**: How important is it to provide balanced, fair feedback?
+Consider your OCEAN personality profile:
+- **Openness (O)**: Are you curious about diverse proposals or focused on what you know?
+- **Conscientiousness (C)**: How thorough and fair will your feedback be?
+- **Extraversion (E)**: How eagerly do you engage with others' work?
+- **Agreeableness (A)**: Do you give constructive, supportive feedback or blunt critique?
+- **Neuroticism (N)**: How cautious are you about spending credits on feedback?
 
 ## Context Considerations:
 

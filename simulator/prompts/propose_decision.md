@@ -26,15 +26,12 @@ Phases: *PROPOSE* → FEEDBACK → REVISE → STAKE → FINALIZE
 
 ## Decision Factors:
 
-Consider your personality traits:
-- **Initiative**: How proactive are you in taking action?
-- **Compliance**: How much do you follow group processes and expectations?
-- **Risk Tolerance**: How willing are you to put yourself forward?
-- **Persuasiveness**: How confident are you in your ability to influence others?
-- **Sociability**: How much do you want to engage with the group?
-- **Adaptability**: How flexible are you in responding to the situation?
-- **Self Interest**: How focused are you on advancing your own position?
-- **Consistency**: How important is it to maintain consistent behavior?
+Consider your OCEAN personality profile:
+- **Openness (O)**: Are you drawn to creative, novel solutions or conventional approaches?
+- **Conscientiousness (C)**: How thoroughly do you prepare before acting?
+- **Extraversion (E)**: How proactive and assertive are you in taking the lead?
+- **Agreeableness (A)**: Do you prioritize group harmony or your own position?
+- **Neuroticism (N)**: How cautious are you about risk and exposure?
 
 ## Context Considerations:
 

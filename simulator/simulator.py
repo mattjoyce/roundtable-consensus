@@ -95,12 +95,6 @@ def parse_arguments():
     )
 
     parser.add_argument(
-        "--nollm",
-        action="store_true",
-        help="Disable LLM usage and force RNG-based decisions for faster testing",
-    )
-
-    parser.add_argument(
         "--model",
         type=str,
         help="LLM model name as registered in llm (e.g. 'gpt-4o', 'anthropic/claude-sonnet-4-6', 'gemma3n:e4b')",
@@ -311,7 +305,7 @@ def main():
                     config["consensus"]["stake_phase_ticks"]["max"],
                 ),
                 finalize_phase_ticks=config["consensus"]["finalize_phase_ticks"],
-                llm_config={} if args.nollm else config.get("llm", {}),
+                llm_config=config.get("llm", {}),
                 debug_config=config.get("debug", {}),
             )
 
@@ -326,7 +320,7 @@ def main():
                 problem_statement = load_issue_from_file(args.issue)
                 if not args.quiet:
                     logger.info(f"Using issue from file: {args.issue}")
-            elif config.get("llm", {}).get("issue", False) and not args.nollm:
+            elif config.get("llm", {}).get("issue", False):
                 model = config.get("llm", {}).get("model", "gemma3n:e4b")
                 problem_statement = generate_issue_content(scenario_seed, model)
                 if not args.quiet:

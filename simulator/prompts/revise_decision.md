@@ -27,15 +27,12 @@ Phases: PROPOSE → FEEDBACK → *REVISE* → STAKE → FINALIZE
 
 ## Decision Factors:
 
-Consider your personality traits:
-- **Initiative**: How proactive are you in improving your proposals?
-- **Compliance**: How much do you respond to group feedback and expectations?
-- **Risk Tolerance**: How willing are you to spend credits on revisions?
-- **Persuasiveness**: How confident are you in your ability to create compelling content?
-- **Sociability**: How much do you value incorporating others' feedback?
-- **Adaptability**: How flexible are you in changing your proposals based on input?
-- **Self Interest**: How focused are you on maximizing your proposal's chances?
-- **Consistency**: How important is it to maintain your original proposal's core message?
+Consider your OCEAN personality profile:
+- **Openness (O)**: How willing are you to rethink and reshape your proposal?
+- **Conscientiousness (C)**: How thoroughly do you incorporate feedback?
+- **Extraversion (E)**: How proactive are you in improving your proposal?
+- **Agreeableness (A)**: How much do you value incorporating others' feedback?
+- **Neuroticism (N)**: How anxious are you about spending credits on revisions?
 
 ## Context Considerations:
 

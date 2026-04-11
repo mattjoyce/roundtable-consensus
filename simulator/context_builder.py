@@ -42,7 +42,7 @@ def build_feedback_context(state, all_proposal_contents, current_tick, agent_poo
         author_traits = ""
         if agent_pool and proposal.author in agent_pool.agents:
             agent = agent_pool.agents[proposal.author]
-            profile = agent.metadata.get("protocol_profile", {})
+            profile = agent.metadata["ocean_profile"]
 
             # Get first letter of each trait with value
             trait_parts = []
@@ -55,7 +55,7 @@ def build_feedback_context(state, all_proposal_contents, current_tick, agent_poo
                 author_traits = f" [{' '.join(trait_parts)}]"
 
         context_lines.append(
-            f"Proposal:{proposal.proposal_id}, Agent:{proposal.author} Traits:{author_traits}"
+            f"Proposal:{proposal.proposal_id}, Agent:{proposal.author} OCEAN:{author_traits}"
         )
 
         # Add full proposal content
@@ -106,7 +106,7 @@ def enhance_context_for_call(agent, payload, call_type):
         return build_context_stake_action(agent, issue, payload, stored_preferences)
     else:
         # Fallback for unknown call types
-        print(f"WARNING: Unknown call type '{call_type}' - using base context.")
+        logger.warning(f"Unknown call type '{call_type}' - using base context.")
         return build_base_context(agent, issue)
 
 
@@ -153,15 +153,14 @@ def build_propose_decision_context(agent, **kwargs):
                 author_info = f"by {proposal.author}"
                 if agent_pool and proposal.author in agent_pool.agents:
                     author_agent = agent_pool.agents[proposal.author]
-                    profile = author_agent.metadata.get("protocol_profile", {})
+                    profile = author_agent.metadata.get("ocean_profile", {})
                     if profile:
-                        # Show key traits of other agents
-                        key_traits = []
-                        for trait in ["initiative", "sociability", "persuasiveness"]:
-                            if trait in profile:
-                                key_traits.append(f"{trait[:4]}={profile[trait]:.2f}")
-                        if key_traits:
-                            author_info += f" [{', '.join(key_traits)}]"
+                        ocean_parts = []
+                        for key in ["openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"]:
+                            if key in profile:
+                                ocean_parts.append(f"{key[0].upper()}={profile[key]:.2f}")
+                        if ocean_parts:
+                            author_info += f" [{', '.join(ocean_parts)}]"
 
                 context_lines.append(f"- Proposal {proposal.proposal_id} {author_info}")
                 context_lines.append(
@@ -182,9 +181,9 @@ def build_base_context(agent, issue):
     Returns markdown with agent traits and issue problem statement.
     """
     # Extract traits from agent metadata
-    profile = agent.metadata.get("protocol_profile", {})
+    profile = agent.metadata["ocean_profile"]
     
-    context_lines = [f"# Agent: {agent.agent_id}", "", "## Traits"]
+    context_lines = [f"# Agent: {agent.agent_id}", "", "## OCEAN Profile"]
     
     # Add traits in a clean markdown list format
     for trait_name, value in profile.items():
@@ -278,7 +277,7 @@ def build_context_stake(agent, issue, payload):
     current_conviction = payload.get("current_conviction", {})
     
     # Extract traits from agent metadata
-    profile = agent.metadata.get("protocol_profile", {})
+    profile = agent.metadata["ocean_profile"]
     
     # Start building context with agent information
     context_lines = [
@@ -287,7 +286,7 @@ def build_context_stake(agent, issue, payload):
         "## Agent ID",
         agent.agent_id,
         "",
-        "## Your Traits",
+        "## OCEAN Profile",
         "| Trait         | Value |",
         "|---------------|-------|"
     ]
@@ -313,7 +312,7 @@ def build_context_stake_preferences(agent, issue, payload):
     max_ticks = payload.get("max_ticks", 15)  # This one can have a default
     
     # Extract traits from agent metadata
-    profile = agent.metadata.get("protocol_profile", {})
+    profile = agent.metadata["ocean_profile"]
     
     # Start building context with agent information
     context_lines = [
@@ -322,7 +321,7 @@ def build_context_stake_preferences(agent, issue, payload):
         "## Agent ID",
         agent.agent_id,
         "",
-        "## Your Traits",
+        "## OCEAN Profile",
         "| Trait         | Value |",
         "|---------------|-------|"
     ]
@@ -378,21 +377,13 @@ def build_context_stake_action(agent, issue, payload, stored_preferences):
     """
     Build context for stake action decisions (Phase 2) with preferences, ledger, and leaderboard.
     """
-    # Get current state information - NO DEFAULTS to expose missing data
-    print(f"PAYLOAD_DEBUG: Available keys: {list(payload.keys())}")
-    
-    # Fail explicitly if expected keys are missing
-    if "current_balance" not in payload:
-        print(f"ERROR: 'current_balance' not in payload. Available: {list(payload.keys())}")
-    if "tick" not in payload:
-        print(f"ERROR: 'tick' not in payload. Available: {list(payload.keys())}")
-    current_balance = payload["current_balance"]  # Will KeyError if missing
-    tick = payload["tick"]  # Will KeyError if missing  
+    current_balance = payload["current_balance"]
+    tick = payload["tick"]
     max_ticks = payload.get("max_ticks", 15)  # This one can have a default
     atomic_stakes = payload.get("atomic_stakes", [])  # List of atomic stake records
     
     # Extract traits from agent metadata
-    profile = agent.metadata.get("protocol_profile", {})
+    profile = agent.metadata["ocean_profile"]
     
     # Start building context with agent information
     context_lines = [
@@ -401,7 +392,7 @@ def build_context_stake_action(agent, issue, payload, stored_preferences):
         "## Agent ID",
         agent.agent_id,
         "",
-        "## Your Traits",
+        "## OCEAN Profile",
         "| Trait         | Value |",
         "|---------------|-------|"
     ]

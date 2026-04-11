@@ -23,11 +23,10 @@ class Primer:
         }
         agent_ids = list(selected_agents.keys())
 
-        # Inject trait profiles into selected agents
+        # Inject OCEAN profiles into selected agents
         for i, (aid, agent) in enumerate(selected_agents.items()):
-            # Use the archetype from agent metadata (set during pool creation)
             intended_archetype = agent.metadata.get("base_archetype")
-            base_profile, archetype_name = generate_base_profile(
+            base_profile, archetype_name = generate_ocean_profile(
                 seed + i, intended_archetype
             )
             mutation_rounds = (
@@ -38,7 +37,7 @@ class Primer:
             )
 
             agent.metadata = agent.metadata or {}
-            agent.metadata["protocol_profile"] = mutated_profile
+            agent.metadata["ocean_profile"] = mutated_profile
             agent.metadata["archetype"] = archetype_name
             agent.metadata["profile_origin"] = {
                 "seed": seed + i,
@@ -46,7 +45,7 @@ class Primer:
                 "base_archetype": archetype_name,
             }
 
-            logger.info(f"[TraitProfile] {aid} ({archetype_name}) → {mutated_profile}")
+            logger.info(f"[OCEAN] {aid} ({archetype_name}) → {mutated_profile}")
 
         initial_proposals = {
             aid: self._generate_lorem_proposal(seed + i, trait_config)
@@ -74,127 +73,96 @@ class Primer:
 # Fallback constants (used when config not provided)
 MUTATION_ROUNDS = 20
 
-# Define 10 personality archetypes with distinct trait patterns
+# OCEAN (Big Five) personality archetypes
+# Keys: openness, conscientiousness, extraversion, agreeableness, neuroticism
 ARCHETYPES = {
     "Leader": {
-        "compliance": 0.3,
-        "initiative": 0.9,
-        "adaptability": 0.7,
-        "sociability": 0.8,
-        "self_interest": 0.6,
-        "risk_tolerance": 0.7,
-        "consistency": 0.8,
-        "persuasiveness": 0.9,
+        "openness": 0.70,
+        "conscientiousness": 0.80,
+        "extraversion": 0.90,
+        "agreeableness": 0.50,
+        "neuroticism": 0.20,
     },
     "Collaborator": {
-        "compliance": 0.8,
-        "initiative": 0.6,
-        "adaptability": 0.8,
-        "sociability": 0.9,
-        "self_interest": 0.3,
-        "risk_tolerance": 0.4,
-        "consistency": 0.7,
-        "persuasiveness": 0.7,
+        "openness": 0.60,
+        "conscientiousness": 0.70,
+        "extraversion": 0.70,
+        "agreeableness": 0.90,
+        "neuroticism": 0.30,
     },
     "Analyst": {
-        "compliance": 0.9,
-        "initiative": 0.4,
-        "adaptability": 0.3,
-        "sociability": 0.3,
-        "self_interest": 0.4,
-        "risk_tolerance": 0.2,
-        "consistency": 0.9,
-        "persuasiveness": 0.5,
+        "openness": 0.50,
+        "conscientiousness": 0.90,
+        "extraversion": 0.30,
+        "agreeableness": 0.50,
+        "neuroticism": 0.40,
     },
     "Maverick": {
-        "compliance": 0.2,
-        "initiative": 0.8,
-        "adaptability": 0.9,
-        "sociability": 0.5,
-        "self_interest": 0.7,
-        "risk_tolerance": 0.9,
-        "consistency": 0.3,
-        "persuasiveness": 0.6,
+        "openness": 0.90,
+        "conscientiousness": 0.20,
+        "extraversion": 0.60,
+        "agreeableness": 0.30,
+        "neuroticism": 0.50,
     },
     "Diplomat": {
-        "compliance": 0.7,
-        "initiative": 0.5,
-        "adaptability": 0.7,
-        "sociability": 0.8,
-        "self_interest": 0.4,
-        "risk_tolerance": 0.3,
-        "consistency": 0.6,
-        "persuasiveness": 0.9,
+        "openness": 0.60,
+        "conscientiousness": 0.60,
+        "extraversion": 0.70,
+        "agreeableness": 0.80,
+        "neuroticism": 0.20,
     },
     "Opportunist": {
-        "compliance": 0.4,
-        "initiative": 0.7,
-        "adaptability": 0.8,
-        "sociability": 0.6,
-        "self_interest": 0.9,
-        "risk_tolerance": 0.8,
-        "consistency": 0.4,
-        "persuasiveness": 0.7,
+        "openness": 0.70,
+        "conscientiousness": 0.40,
+        "extraversion": 0.70,
+        "agreeableness": 0.30,
+        "neuroticism": 0.40,
     },
     "Follower": {
-        "compliance": 0.9,
-        "initiative": 0.2,
-        "adaptability": 0.5,
-        "sociability": 0.6,
-        "self_interest": 0.5,
-        "risk_tolerance": 0.2,
-        "consistency": 0.8,
-        "persuasiveness": 0.3,
+        "openness": 0.30,
+        "conscientiousness": 0.70,
+        "extraversion": 0.50,
+        "agreeableness": 0.80,
+        "neuroticism": 0.60,
     },
     "Contrarian": {
-        "compliance": 0.2,
-        "initiative": 0.6,
-        "adaptability": 0.4,
-        "sociability": 0.4,
-        "self_interest": 0.6,
-        "risk_tolerance": 0.7,
-        "consistency": 0.7,
-        "persuasiveness": 0.8,
+        "openness": 0.70,
+        "conscientiousness": 0.50,
+        "extraversion": 0.50,
+        "agreeableness": 0.20,
+        "neuroticism": 0.60,
     },
     "Saboteur": {
-        "compliance": 0.05,
-        "initiative": 0.8,
-        "adaptability": 0.6,
-        "sociability": 0.4,
-        "self_interest": 0.95,
-        "risk_tolerance": 0.95,
-        "consistency": 0.2,
-        "persuasiveness": 0.7,
+        "openness": 0.50,
+        "conscientiousness": 0.15,
+        "extraversion": 0.60,
+        "agreeableness": 0.10,
+        "neuroticism": 0.80,
     },
     "Caretaker": {
-        "compliance": 0.85,
-        "initiative": 0.4,
-        "adaptability": 0.7,
-        "sociability": 0.9,
-        "self_interest": 0.15,
-        "risk_tolerance": 0.25,
-        "consistency": 0.75,
-        "persuasiveness": 0.65,
+        "openness": 0.40,
+        "conscientiousness": 0.70,
+        "extraversion": 0.60,
+        "agreeableness": 0.95,
+        "neuroticism": 0.30,
     },
 }
 
-# Cache archetype names for performance
 ARCHETYPE_NAMES = list(ARCHETYPES.keys())
 
 
-def generate_base_profile(seed: int, archetype_name: str = None) -> tuple[dict, str]:
-    """Generate a base profile by using specified archetype or randomly selecting one.
+def generate_ocean_profile(seed: int, archetype_name: str = None) -> tuple[dict, str]:
+    """Generate an OCEAN profile from an archetype with small random variations.
 
     Args:
         seed: Random seed for variations
         archetype_name: Specific archetype to use, or None for random selection
 
     Returns:
-        tuple: (profile_dict, archetype_name)
+        tuple: (ocean_profile_dict, archetype_name)
     """
     rng = random.Random(seed)
 
-    # Use specified archetype or select randomly
     if archetype_name is None:
         archetype_name = rng.choice(ARCHETYPE_NAMES)
 
