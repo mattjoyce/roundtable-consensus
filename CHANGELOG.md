@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-04-11
+- Organize RFCs into accepted/completed and add new accepted RFCs.
+- Switch the LLM backend from direct Ollama to Simon Willison's llm package.
+- Replace 8-trait RNG agents with OCEAN LLM-only agents.
+
 All notable changes to the Round Table Consensus Protocol will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
