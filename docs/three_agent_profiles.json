@@ -1,0 +1,44 @@
+[
+  {
+    "agent_id": "agent-000",
+    "base_archetype": "Leader",
+    "profile": {
+      "compliance": 0.39,
+      "initiative": 0.98,
+      "adaptability": 0.56,
+      "sociability": 0.86,
+      "self_interest": 0.88,
+      "risk_tolerance": 0.59,
+      "consistency": 0.8,
+      "persuasiveness": 0.76
+    }
+  },
+  {
+    "agent_id": "agent-001",
+    "base_archetype": "Collaborator",
+    "profile": {
+      "compliance": 0.76,
+      "initiative": 0.53,
+      "adaptability": 0.67,
+      "sociability": 0.84,
+      "self_interest": 0.31,
+      "risk_tolerance": 0.4,
+      "consistency": 0.79,
+      "persuasiveness": 0.79
+    }
+  },
+  {
+    "agent_id": "agent-002",
+    "base_archetype": "Analyst",
+    "profile": {
+      "compliance": 0.98,
+      "initiative": 0.36,
+      "adaptability": 0.24,
+      "sociability": 0.42,
+      "self_interest": 0.27,
+      "risk_tolerance": 0.11,
+      "consistency": 0.8,
+      "persuasiveness": 0.38
+    }
+  }
+]

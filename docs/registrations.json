@@ -1,0 +1,53 @@
+[
+  {
+    "agent_id": "agent-000",
+    "session_id": "41e234d1",
+    "token": "PEaalgY0hjamfH_2zX1C1HVi7zXnsOUM",
+    "balance": 100,
+    "ocean_profile": {
+      "compliance": 0.39,
+      "initiative": 0.98,
+      "adaptability": 0.56,
+      "sociability": 0.86,
+      "self_interest": 0.88,
+      "risk_tolerance": 0.59,
+      "consistency": 0.8,
+      "persuasiveness": 0.76
+    },
+    "runner_url": ""
+  },
+  {
+    "agent_id": "agent-001",
+    "session_id": "41e234d1",
+    "token": "zzMFn7hx3LTaVkkj1r9De9gwwcPXvDvt",
+    "balance": 100,
+    "ocean_profile": {
+      "compliance": 0.76,
+      "initiative": 0.53,
+      "adaptability": 0.67,
+      "sociability": 0.84,
+      "self_interest": 0.31,
+      "risk_tolerance": 0.4,
+      "consistency": 0.79,
+      "persuasiveness": 0.79
+    },
+    "runner_url": ""
+  },
+  {
+    "agent_id": "agent-002",
+    "session_id": "41e234d1",
+    "token": "dwSPhQqt4lU_0PY65ddH89TZze589grk",
+    "balance": 100,
+    "ocean_profile": {
+      "compliance": 0.98,
+      "initiative": 0.36,
+      "adaptability": 0.24,
+      "sociability": 0.42,
+      "self_interest": 0.27,
+      "risk_tolerance": 0.11,
+      "consistency": 0.8,
+      "persuasiveness": 0.38
+    },
+    "runner_url": ""
+  }
+]
