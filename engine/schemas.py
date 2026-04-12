@@ -74,6 +74,64 @@ class ActionRequest(BaseModel):
     payload: Dict[str, Any] = Field(default_factory=dict)
 
 
+# --- Per-action payload schemas ---
+#
+# External API uses friendly field names (content, amount, proposal_id).
+# Internal simulator controller uses disambiguated names (new_content,
+# stake_amount, target_proposal_id). Pydantic aliases bridge the two:
+# FastAPI accepts the alias (external name); model_dump() emits the
+# field name (internal name) for the controller.
+
+class ProposePayload(BaseModel):
+    content: str
+
+
+class FeedbackPayload(BaseModel):
+    target_proposal_id: int = Field(alias="proposal_id")
+    comment: str
+
+
+class RevisePayload(BaseModel):
+    new_content: str = Field(alias="content")
+
+
+class StakePayload(BaseModel):
+    proposal_id: int
+    stake_amount: int = Field(alias="amount", gt=0)
+    round_number: int = 1
+    choice_reason: str = "unknown"
+
+
+class SwitchStakePayload(BaseModel):
+    target_proposal_id: int = Field(alias="proposal_id")
+    source_proposal_id: int = Field(alias="from_proposal_id")
+    cp_amount: int = Field(gt=0)
+    reason: str = "strategic_switch"
+
+
+class UnstakePayload(BaseModel):
+    proposal_id: int
+    cp_amount: int = Field(gt=0)
+    reason: str = "unstake"
+
+
+class SignalReadyPayload(BaseModel):
+    """Empty payload; signal_ready and wait take no fields."""
+    model_config = {"extra": "forbid"}
+
+
+ACTION_PAYLOAD_SCHEMA = {
+    "propose": ProposePayload,
+    "feedback": FeedbackPayload,
+    "revise": RevisePayload,
+    "stake": StakePayload,
+    "switch_stake": SwitchStakePayload,
+    "unstake": UnstakePayload,
+    "signal_ready": SignalReadyPayload,
+    "wait": SignalReadyPayload,
+}
+
+
 class ActionResult(BaseModel):
     """Result of action submission."""
 

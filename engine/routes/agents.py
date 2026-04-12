@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, Header, HTTPException
+from pydantic import ValidationError
 
 _DEBUG_DIR = os.environ.get("RTC_DEBUG_DIR", "")
 
@@ -39,6 +40,7 @@ from models import ACTION_QUEUE, Action, Proposal
 
 from ..remote_agent import RemoteAgentActor, generate_agent_token
 from ..schemas import (
+    ACTION_PAYLOAD_SCHEMA,
     ActionRequest,
     ActionResult,
     AgentRegisterRequest,
@@ -248,37 +250,27 @@ def submit_action(
                     detail="Cannot provide feedback on your own proposal",
                 )
 
+    # Parse the per-action payload schema. Aliases translate external
+    # API names (content, amount, proposal_id) into internal controller
+    # names (new_content, stake_amount, target_proposal_id) on dump.
+    schema = ACTION_PAYLOAD_SCHEMA[req.type]
+    try:
+        parsed = schema.model_validate(req.payload)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+
+    payload = parsed.model_dump()
+    payload["issue_id"] = ctrl.config.issue_id
+    payload["tick"] = state.tick
+
     # Build the internal Action and queue it
     internal_type = _ACTION_TYPE_MAP[req.type]
-    payload = dict(req.payload)
-    payload["issue_id"] = ctrl.config.issue_id
-    payload.setdefault("tick", state.tick)
 
-    # Translate external API field names to internal controller names.
-    # The external API uses intuitive names (proposal_id, amount); the
-    # simulator controller uses disambiguated names (target_proposal_id,
-    # source_proposal_id, stake_amount).
-    if req.type == "feedback":
-        if "proposal_id" in payload and "target_proposal_id" not in payload:
-            payload["target_proposal_id"] = payload.pop("proposal_id")
-    elif req.type == "stake":
-        if "amount" in payload and "stake_amount" not in payload:
-            payload["stake_amount"] = payload.pop("amount")
-    elif req.type == "revise":
-        if "content" in payload and "new_content" not in payload:
-            payload["new_content"] = payload.pop("content")
-    elif req.type == "switch_stake":
-        if "proposal_id" in payload and "target_proposal_id" not in payload:
-            payload["target_proposal_id"] = payload.pop("proposal_id")
-        if "from_proposal_id" in payload and "source_proposal_id" not in payload:
-            payload["source_proposal_id"] = payload.pop("from_proposal_id")
-
-    # For proposals, build the Proposal fields
+    # For proposals, controller expects a full Proposal; supply author fields.
     if req.type == "propose":
-        payload.setdefault("content", payload.get("content", ""))
-        payload.setdefault("agent_id", agent_id)
-        payload.setdefault("author", agent_id)
-        payload.setdefault("proposal_id", 0)  # Controller assigns real ID
+        payload["agent_id"] = agent_id
+        payload["author"] = agent_id
+        payload["proposal_id"] = 0  # Controller assigns real ID
 
     ACTION_QUEUE.submit(
         Action(type=internal_type, agent_id=agent_id, payload=payload)
