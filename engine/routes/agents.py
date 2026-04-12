@@ -18,6 +18,7 @@ from ..schemas import (
     ActionResult,
     AgentRegisterRequest,
     AgentRegistration,
+    AgentUpdateRequest,
 )
 from ..session_manager import SessionManager
 from . import get_session_or_404
@@ -114,6 +115,33 @@ def register_agent(session_id: str, req: AgentRegisterRequest):
         balance=state.agent_balances[req.agent_id],
         ocean_profile=req.ocean_profile,
         runner_url=req.runner_url,
+    )
+
+
+@router.patch("/{agent_id}", response_model=AgentRegistration)
+def update_agent(session_id: str, agent_id: str, req: AgentUpdateRequest):
+    """Update mutable fields on a registered agent (currently: runner_url)."""
+    session = get_session_or_404(session_id)
+    config = session.config
+    state = session.state
+
+    agent = config.selected_agents.get(agent_id)
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent {agent_id} not found in session {session_id}",
+        )
+
+    if req.runner_url is not None:
+        agent.runner_url = req.runner_url
+
+    return AgentRegistration(
+        agent_id=agent_id,
+        session_id=session_id,
+        token=agent.token,
+        balance=state.agent_balances.get(agent_id, 0),
+        ocean_profile=(agent.metadata or {}).get("protocol_profile", {}),
+        runner_url=agent.runner_url,
     )
 
 

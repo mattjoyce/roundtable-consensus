@@ -31,6 +31,16 @@ def find_free_port(start: int = 8200, count: int = 100) -> int:
     raise RuntimeError(f"No free port found in range {start}-{start + count}")
 
 
+def _patch_runner_url(engine_url: str, session_id: str, agent_id: str, runner_url: str) -> None:
+    """Tell the engine where to dispatch signals for this agent."""
+    resp = httpx.patch(
+        f"{engine_url}/v1/sessions/{session_id}/agents/{agent_id}",
+        json={"runner_url": runner_url},
+        timeout=5.0,
+    )
+    resp.raise_for_status()
+
+
 def spawn_runners(
     engine_url: str,
     session_id: str,
@@ -88,6 +98,11 @@ def spawn_runners(
         if proc.poll() is not None:
             print(f"  Runner for {agent_id} failed to start (exit {proc.returncode})")
             continue
+
+        try:
+            _patch_runner_url(engine_url, session_id, agent_id, runner_url)
+        except httpx.HTTPError as e:
+            print(f"  Warning: could not register runner_url for {agent_id}: {e}")
 
         agent_label = agent_name or "default"
         print(f"  Runner {agent_id} on {runner_url} (pid {proc.pid}, agent={agent_label})")

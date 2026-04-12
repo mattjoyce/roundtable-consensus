@@ -48,6 +48,12 @@ class AgentRegisterRequest(BaseModel):
     )
 
 
+class AgentUpdateRequest(BaseModel):
+    """Update mutable fields on a registered agent."""
+
+    runner_url: Optional[str] = None
+
+
 class AgentRegistration(BaseModel):
     """Response after successful agent registration."""
 
