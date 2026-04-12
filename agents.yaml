@@ -1,0 +1,58 @@
+# Agent executable configurations for the RTC runner.
+#
+# Each entry defines how to invoke an external coding agent CLI.
+# The runner builds a mono context (state + API docs + curl examples)
+# and pipes it to the agent. The agent uses curl to submit its action
+# back to the engine directly.
+#
+# input_mode:
+#   stdin  — pipe mono context to executable's stdin (default)
+#   arg    — pass mono context as a CLI argument via prompt_arg
+#   file   — write mono context to a temp file, pass path via prompt_arg
+#
+# system_prompt_arg: CLI flag for passing the system prompt separately.
+#   If empty, system prompt is prepended to the mono context.
+
+default_agent: claude-sonnet
+
+agents:
+  claude-sonnet:
+    executable: claude
+    args:
+      - "--print"
+      - "--dangerously-skip-permissions"
+      - "--model"
+      - "sonnet"
+    input_mode: stdin
+    system_prompt_arg: "--system-prompt"
+    env: {}
+
+  claude-opus:
+    executable: claude
+    args:
+      - "--print"
+      - "--dangerously-skip-permissions"
+      - "--model"
+      - "opus"
+    input_mode: stdin
+    system_prompt_arg: "--system-prompt"
+    env: {}
+
+  claude-haiku:
+    executable: claude
+    args:
+      - "--print"
+      - "--dangerously-skip-permissions"
+      - "--model"
+      - "haiku"
+    input_mode: stdin
+    system_prompt_arg: "--system-prompt"
+    env: {}
+
+  # Example: opencode with local ollama model
+  # opencode-local:
+  #   executable: opencode
+  #   args: ["--model", "gemma3n:e4b"]
+  #   input_mode: stdin
+  #   system_prompt_arg: ""
+  #   env: {}
