@@ -6,6 +6,7 @@ submitting its action back to the engine via curl.
 """
 
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -55,6 +56,7 @@ def _reap_process(
     proc: subprocess.Popen,
     tmp_path: Optional[str] = None,
     debug_files: Optional[tuple] = None,
+    workspace: Optional[str] = None,
 ):
     """Wait for process to exit and clean up temp files. Runs in a thread."""
     try:
@@ -72,6 +74,8 @@ def _reap_process(
                 fh.close()
             except OSError:
                 pass
+    if workspace:
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 def spawn_agent(
@@ -124,8 +128,13 @@ def spawn_agent(
         prompt_arg = agent_cfg.get("prompt_arg", "-f")
         cmd.extend([prompt_arg, tmp_path])
 
+    # Isolate agent from host filesystem context: fresh empty workspace as
+    # cwd + HOME so Claude (or any CLI) cannot auto-discover project/user
+    # CLAUDE.md files and contaminate its reasoning with unrelated context.
+    workspace = tempfile.mkdtemp(prefix="rtc-agent-")
+
     # Build environment
-    env = {**os.environ, **extra_env}
+    env = {**os.environ, **extra_env, "HOME": workspace}
 
     # Capture stdout/stderr to files if debug_dir is set
     debug_files = None
@@ -146,7 +155,7 @@ def spawn_agent(
         stdout=stdout_target,
         stderr=stderr_target,
         env=env,
-        cwd=cwd or str(Path(__file__).resolve().parent.parent),
+        cwd=cwd or workspace,
     )
 
     # Write stdin and close
@@ -159,7 +168,9 @@ def spawn_agent(
 
     # Reap process in background to avoid zombies and clean up temp files
     threading.Thread(
-        target=_reap_process, args=(proc, tmp_path, debug_files), daemon=True
+        target=_reap_process,
+        args=(proc, tmp_path, debug_files, workspace),
+        daemon=True,
     ).start()
 
     return proc
