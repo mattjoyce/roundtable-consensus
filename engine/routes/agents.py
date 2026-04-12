@@ -264,6 +264,9 @@ def submit_action(
     elif req.type == "stake":
         if "amount" in payload and "stake_amount" not in payload:
             payload["stake_amount"] = payload.pop("amount")
+    elif req.type == "revise":
+        if "content" in payload and "new_content" not in payload:
+            payload["new_content"] = payload.pop("content")
     elif req.type == "switch_stake":
         if "proposal_id" in payload and "target_proposal_id" not in payload:
             payload["target_proposal_id"] = payload.pop("proposal_id")
