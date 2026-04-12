@@ -51,7 +51,11 @@ def _merge_prompt(system_prompt: str, mono_context: str, has_system_arg: bool) -
     return mono_context
 
 
-def _reap_process(proc: subprocess.Popen, tmp_path: Optional[str] = None):
+def _reap_process(
+    proc: subprocess.Popen,
+    tmp_path: Optional[str] = None,
+    debug_files: Optional[tuple] = None,
+):
     """Wait for process to exit and clean up temp files. Runs in a thread."""
     try:
         proc.wait()
@@ -62,6 +66,12 @@ def _reap_process(proc: subprocess.Popen, tmp_path: Optional[str] = None):
             os.unlink(tmp_path)
         except OSError:
             pass
+    if debug_files:
+        for fh in debug_files:
+            try:
+                fh.close()
+            except OSError:
+                pass
 
 
 def spawn_agent(
@@ -69,6 +79,7 @@ def spawn_agent(
     system_prompt: str,
     mono_context: str,
     cwd: Optional[str] = None,
+    debug_dir: str = "",
 ) -> subprocess.Popen:
     """Spawn an agent CLI subprocess with the mono context.
 
@@ -116,12 +127,24 @@ def spawn_agent(
     # Build environment
     env = {**os.environ, **extra_env}
 
+    # Capture stdout/stderr to files if debug_dir is set
+    debug_files = None
+    if debug_dir:
+        Path(debug_dir).mkdir(parents=True, exist_ok=True)
+        stdout_f = open(Path(debug_dir) / "stdout.txt", "wb")
+        stderr_f = open(Path(debug_dir) / "stderr.txt", "wb")
+        stdout_target, stderr_target = stdout_f, stderr_f
+        debug_files = (stdout_f, stderr_f)
+    else:
+        stdout_target = subprocess.DEVNULL
+        stderr_target = subprocess.DEVNULL
+
     # Spawn — fire and forget
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE if stdin_data else None,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=stdout_target,
+        stderr=stderr_target,
         env=env,
         cwd=cwd or str(Path(__file__).resolve().parent.parent),
     )
@@ -136,7 +159,7 @@ def spawn_agent(
 
     # Reap process in background to avoid zombies and clean up temp files
     threading.Thread(
-        target=_reap_process, args=(proc, tmp_path), daemon=True
+        target=_reap_process, args=(proc, tmp_path, debug_files), daemon=True
     ).start()
 
     return proc

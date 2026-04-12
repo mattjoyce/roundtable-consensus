@@ -1,8 +1,22 @@
 """Session CRUD, tick, and query endpoints."""
 
+import os
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
+
+_SAVE_DIR = os.environ.get("RTC_SAVE_DIR", "./debug/saves")
+
+
+class SavePathRequest(BaseModel):
+    path: Optional[str] = None
+
+
+class LoadPathRequest(BaseModel):
+    path: str
 
 from ..schemas import (
     PhaseStatus,
@@ -80,6 +94,33 @@ def get_phase(session_id: str):
         agents_pending=len(unready),
         pending_agent_ids=unready,
     )
+
+
+@router.post("/{session_id}/save")
+def save_session(session_id: str, req: SavePathRequest):
+    """Pickle the session to disk. Debug-only. Returns the path written."""
+    s = get_session_or_404(session_id)
+    out_path = req.path or str(
+        Path(_SAVE_DIR) / f"{session_id}_tick{s.tick:03d}.pkl"
+    )
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _manager.save_session(session_id, out_path)
+    except (OSError, Exception) as e:
+        raise HTTPException(status_code=500, detail=f"Save failed: {e}") from e
+    return {"session_id": session_id, "path": out_path, "tick": s.tick}
+
+
+@router.post("/load")
+def load_session(req: LoadPathRequest):
+    """Restore a session from a pickle file. Replaces any existing session with the same id."""
+    if not Path(req.path).exists():
+        raise HTTPException(status_code=404, detail=f"Save file not found: {req.path}")
+    try:
+        session = _manager.load_session(req.path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Load failed: {e}") from e
+    return session.to_status()
 
 
 @router.post("/{session_id}/tick", response_model=TickResult)

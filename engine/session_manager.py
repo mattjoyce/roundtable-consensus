@@ -226,6 +226,24 @@ class SessionManager:
             session.do_tick()
         return session
 
+    def save_session(self, session_id: str, path: str) -> str:
+        """Pickle a session to disk. Debug tool — format is Python-specific."""
+        import pickle
+        session = self._sessions.get(session_id)
+        if session is None:
+            raise KeyError(session_id)
+        with open(path, "wb") as f:
+            pickle.dump(session, f)
+        return path
+
+    def load_session(self, path: str) -> Session:
+        """Restore a session from a pickle file and register it."""
+        import pickle
+        with open(path, "rb") as f:
+            session = pickle.load(f)
+        self._sessions[session.session_id] = session
+        return session
+
 
 def _generate_protocol_profile(rng: random.Random) -> dict:
     """Generate a random OCEAN-derived protocol profile for an agent."""

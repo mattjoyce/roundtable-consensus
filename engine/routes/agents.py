@@ -1,10 +1,35 @@
 """Agent registration and action endpoints."""
 
+import json
+import os
 import random
 import sys
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Header, HTTPException
+
+_DEBUG_DIR = os.environ.get("RTC_DEBUG_DIR", "")
+
+
+def _log_action_debug(session_id: str, agent_id: str, req_type: str, payload: dict, tick: int, phase: str):
+    """Append action submission to debug actions.jsonl if RTC_DEBUG_DIR set."""
+    if not _DEBUG_DIR:
+        return
+    try:
+        log_dir = Path(_DEBUG_DIR) / session_id
+        log_dir.mkdir(parents=True, exist_ok=True)
+        with open(log_dir / "actions.jsonl", "a") as f:
+            f.write(json.dumps({
+                "ts": time.time(),
+                "tick": tick,
+                "phase": phase,
+                "agent_id": agent_id,
+                "type": req_type,
+                "payload": payload,
+            }) + "\n")
+    except OSError:
+        pass
 
 _sim_dir = str(Path(__file__).resolve().parent.parent.parent / "simulator")
 if _sim_dir not in sys.path:
@@ -227,17 +252,38 @@ def submit_action(
     internal_type = _ACTION_TYPE_MAP[req.type]
     payload = dict(req.payload)
     payload["issue_id"] = ctrl.config.issue_id
+    payload.setdefault("tick", state.tick)
+
+    # Translate external API field names to internal controller names.
+    # The external API uses intuitive names (proposal_id, amount); the
+    # simulator controller uses disambiguated names (target_proposal_id,
+    # source_proposal_id, stake_amount).
+    if req.type == "feedback":
+        if "proposal_id" in payload and "target_proposal_id" not in payload:
+            payload["target_proposal_id"] = payload.pop("proposal_id")
+    elif req.type == "stake":
+        if "amount" in payload and "stake_amount" not in payload:
+            payload["stake_amount"] = payload.pop("amount")
+    elif req.type == "switch_stake":
+        if "proposal_id" in payload and "target_proposal_id" not in payload:
+            payload["target_proposal_id"] = payload.pop("proposal_id")
+        if "from_proposal_id" in payload and "source_proposal_id" not in payload:
+            payload["source_proposal_id"] = payload.pop("from_proposal_id")
 
     # For proposals, build the Proposal fields
     if req.type == "propose":
         payload.setdefault("content", payload.get("content", ""))
         payload.setdefault("agent_id", agent_id)
         payload.setdefault("author", agent_id)
-        payload.setdefault("tick", state.tick)
         payload.setdefault("proposal_id", 0)  # Controller assigns real ID
 
     ACTION_QUEUE.submit(
         Action(type=internal_type, agent_id=agent_id, payload=payload)
+    )
+
+    _log_action_debug(
+        session_id, agent_id, req.type, dict(req.payload),
+        state.tick, state.current_phase or "",
     )
 
     return ActionResult(
