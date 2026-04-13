@@ -49,10 +49,12 @@ agents:
     system_prompt_arg: "--system-prompt"
     env: {}
 
-  # Example: opencode with local ollama model
-  # opencode-local:
-  #   executable: opencode
-  #   args: ["--model", "gemma3n:e4b"]
-  #   input_mode: stdin
-  #   system_prompt_arg: ""
-  #   env: {}
+  ollama-gemma4:
+    executable: /Users/mattjoyce/Environments/roundtable-consensus/bin/python3
+    args:
+      - "/Users/mattjoyce/Projects/roundtable-consensus/runner/ollama_agent.py"
+    input_mode: stdin
+    system_prompt_arg: "--system-prompt"
+    env:
+      OLLAMA_HOST: "http://192.168.20.8:11434"
+      OLLAMA_MODEL: "gemma4:latest"
