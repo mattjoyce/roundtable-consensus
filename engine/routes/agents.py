@@ -103,7 +103,7 @@ def register_agent(session_id: str, req: AgentRegisterRequest):
     agent = RemoteAgentActor(
         agent_id=req.agent_id,
         initial_balance=0,
-        metadata={"protocol_profile": req.ocean_profile},
+        metadata={"protocol_profile": req.ocean_profile, "background": req.background},
         seed=seed_val,
         rng=random.Random(seed_val),
         runner_url=req.runner_url,

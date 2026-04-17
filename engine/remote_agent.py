@@ -103,6 +103,7 @@ def serialize_signal(agent_id: str, payload: Dict[str, Any]) -> dict:
     if config and agent_id in config.selected_agents:
         agent_meta = config.selected_agents[agent_id].metadata or {}
         signal["ocean_profile"] = agent_meta.get("protocol_profile", {})
+        signal["background"] = agent_meta.get("background", "")
 
     # Protocol config
     if config:

@@ -46,6 +46,10 @@ class AgentRegisterRequest(BaseModel):
         default_factory=dict,
         description="OCEAN-derived protocol profile (initiative, compliance, etc.)",
     )
+    background: str = Field(
+        default="",
+        description="Agent's domain expertise and role context for the system prompt",
+    )
 
 
 class AgentUpdateRequest(BaseModel):

@@ -25,8 +25,11 @@ def load_prompt(name: str) -> str:
 
 
 def build_system_prompt(signal: dict) -> str:
-    """Build the system prompt from agent_system.md + OCEAN profile."""
+    """Build the system prompt from agent_system.md + background + OCEAN profile."""
     base = load_prompt("agent_system.md")
+    background = signal.get("background", "")
+    if background:
+        base += f"\n\nYour background and domain expertise:\n{background}"
     profile = signal.get("ocean_profile", {})
     if profile:
         traits = "\n".join(f"- {k}: {v}" for k, v in profile.items())

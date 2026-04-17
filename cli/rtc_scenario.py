@@ -49,6 +49,7 @@ def create_scenario(
                 "agent_id": p["agent_id"],
                 "runner_url": "",  # No runner yet — use rtc-spawn for that
                 "ocean_profile": p["profile"],
+                "background": p.get("background", ""),
             }
             reg_resp = httpx.post(
                 f"{engine_url}/v1/sessions/{session_id}/agents",

@@ -128,13 +128,17 @@ def spawn_agent(
         prompt_arg = agent_cfg.get("prompt_arg", "-f")
         cmd.extend([prompt_arg, tmp_path])
 
-    # Isolate agent from host filesystem context: fresh empty workspace as
-    # cwd + HOME so Claude (or any CLI) cannot auto-discover project/user
-    # CLAUDE.md files and contaminate its reasoning with unrelated context.
+    # Isolate agent from host filesystem context. By default, set HOME to
+    # a fresh tempdir so CLIs cannot auto-discover CLAUDE.md files.
+    # skip_home_isolation=true keeps real HOME (needed for keychain auth)
+    # when the CLI has its own isolation flag (e.g. claude --bare).
     workspace = tempfile.mkdtemp(prefix="rtc-agent-")
+    skip_home = agent_cfg.get("skip_home_isolation", False)
 
     # Build environment
-    env = {**os.environ, **extra_env, "HOME": workspace}
+    env = {**os.environ, **extra_env}
+    if not skip_home:
+        env["HOME"] = workspace
 
     # Capture stdout/stderr to files if debug_dir is set
     debug_files = None
