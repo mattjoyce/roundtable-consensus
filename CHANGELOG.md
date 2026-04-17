@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-17
+- Runner now executes external agent CLIs in a single mono context, isolates the agent's CWD/HOME in a fresh tmpdir, and adds an ollama-gemma4 agent via HTTP wrapper.
+- Engine adds PATCH /agents/{id} to update an agent's runner_url and wires rtc_spawn.
+- Engine and runner gain debug capture, session save/load, and a fix to the feedback payload.
+- Engine now uses typed per-action payload schemas with Pydantic aliases and renames the revise payload content to new_content.
+- Docs include a three-agent walkthrough and artifacts, plus per-agent background context, pi harness for Ollama, and skip_home_isolation.
+
 ## 2026-04-11
 - Organize RFCs into accepted/completed and add new accepted RFCs.
 - Switch the LLM backend from direct Ollama to Simon Willison's llm package.
